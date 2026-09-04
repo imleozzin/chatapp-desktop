@@ -29,6 +29,7 @@ const ICONS = {
   lock: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
   maximize: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>',
   minimize: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
 };
 
 
@@ -43,6 +44,7 @@ let currentChannel = null;
 let currentDmUser = null;
 let channels = [];
 let categories = [];
+const collapsedCategories = new Set();
 let customEmojis = [];
 let myRole = "member";
 let pendingAttachment = null;
@@ -259,6 +261,14 @@ function notify(title, body) {
   if (document.hasFocus()) return;
   try { new Notification(title, { body, silent: false }); } catch (_) {}
 }
+
+// ---------- Barra de título própria ----------
+document.getElementById("win-minimize").addEventListener("click", () => window.electronAPI.minimizeWindow());
+document.getElementById("win-maximize").addEventListener("click", () => window.electronAPI.toggleMaximizeWindow());
+document.getElementById("win-close").addEventListener("click", () => window.electronAPI.closeWindow());
+window.electronAPI.onWindowMaximized((isMax) => {
+  document.getElementById("titlebar").classList.toggle("is-maximized", isMax);
+});
 
 // ---------- Início: tenta login salvo ----------
 (async function initAuth() {
@@ -729,11 +739,17 @@ function renderChannelLists() {
   categories.forEach((cat) => {
     const inCat = textChs.filter((c) => c.category_id === cat.id);
     if (!inCat.length) return;
+    const isCollapsed = collapsedCategories.has(cat.id);
     const header = document.createElement("li");
-    header.className = "category-header";
-    header.textContent = cat.name;
+    header.className = "category-header" + (isCollapsed ? " collapsed" : "");
+    header.innerHTML = `<span class="category-chevron">${ICONS.chevron}</span><span>${escapeHtml(cat.name)}</span>`;
+    header.addEventListener("click", () => {
+      if (collapsedCategories.has(cat.id)) collapsedCategories.delete(cat.id);
+      else collapsedCategories.add(cat.id);
+      renderChannelLists();
+    });
     textChannelsEl.appendChild(header);
-    inCat.forEach((ch) => appendChannelLi(textChannelsEl, ch, deleteBtnHtml, ch.is_private ? ICONS.lock : ICONS.hash, () => joinChannel(ch.id)));
+    if (!isCollapsed) inCat.forEach((ch) => appendChannelLi(textChannelsEl, ch, deleteBtnHtml, ch.is_private ? ICONS.lock : ICONS.hash, () => joinChannel(ch.id)));
   });
 
   channels.filter((c) => c.type === "voice").forEach((ch) => appendChannelLi(voiceChannelsEl, ch, deleteBtnHtml, ICONS.volume, () => joinVoiceChannel(ch.id), true));
@@ -830,6 +846,7 @@ messageForm.addEventListener("submit", (e) => {
 
 function renderHistory(history) {
   messagesEl.innerHTML = "";
+  lastMsgAuthor = null; lastMsgTime = 0;
   if (!history.length) {
     const ch = channels.find((c) => c.id === currentChannel);
     messagesEl.innerHTML = `
@@ -843,7 +860,11 @@ function renderHistory(history) {
   history.forEach(appendMessage);
 }
 
-function messageRowHtml(msg, isDm) {
+let lastMsgAuthor = null;
+let lastMsgTime = 0;
+const GROUP_WINDOW_MS = 5 * 60 * 1000; // 5 minutos
+
+function messageRowHtml(msg, isDm, grouped) {
   const author = isDm ? msg.from : msg.username;
   const isMine = author === username;
   const canModerate = !isDm && (myRole === "owner" || myRole === "moderator");
@@ -866,16 +887,28 @@ function messageRowHtml(msg, isDm) {
   if (!isDm) actions += `<button class="msg-reply-btn" data-tooltip="Responder">${ICONS.reply}</button>`;
   if (!isDm && canModerate) actions += `<button class="msg-pin-btn" data-tooltip="${msg.pinned ? "Desafixar mensagem" : "Fixar mensagem"}">${ICONS.pin}</button>`;
   const replyQuoteHtml = !isDm && msg.reply_to_id ? `<div class="reply-quote" data-reply-id="${msg.reply_to_id}">${ICONS.reply}<span class="reply-quote-text">mensagem original</span></div>` : "";
-  return `
-    ${avatarHtml(author, msg.avatar, 40)}
-    <div class="msg-body">
+
+  const gutterHtml = grouped
+    ? `<div class="msg-gutter"><span class="msg-hover-time">${time}</span></div>`
+    : `<div class="msg-gutter">${avatarHtml(author, msg.avatar, 40)}</div>`;
+
+  const headerHtml = grouped ? "" : `
       <div class="msg-meta">
         <span class="msg-author" style="color:${color}">${escapeHtml(author)}</span>
         <span class="msg-time">${time}</span>
         ${editedTag}${pinnedTag}
+      </div>`;
+  const hoverActionsHtml = `
+      <div class="msg-hover-actions">
         ${!isDm ? `<button class="msg-react-btn" data-tooltip="Adicionar reação">${ICONS.reactAdd}</button>` : ""}
         ${actions}
-      </div>
+      </div>`;
+
+  return `
+    ${gutterHtml}
+    <div class="msg-body">
+      ${headerHtml}
+      ${hoverActionsHtml}
       ${replyQuoteHtml}
       <div class="msg-text-wrap">${msg.text ? `<div class="msg-text">${renderMessageText(msg.text)}</div>` : ""}</div>
       ${attachmentHtml}
@@ -886,10 +919,12 @@ function messageRowHtml(msg, isDm) {
 function appendMessage(msg) {
   const emptyState = messagesEl.querySelector(".empty-state");
   if (emptyState) emptyState.remove();
+  const grouped = msg.username === lastMsgAuthor && (msg.timestamp - lastMsgTime) < GROUP_WINDOW_MS;
+  lastMsgAuthor = msg.username; lastMsgTime = msg.timestamp;
   const div = document.createElement("div");
-  div.className = "msg";
+  div.className = "msg" + (grouped ? " grouped" : "");
   div.dataset.id = msg.id;
-  div.innerHTML = messageRowHtml(msg, false);
+  div.innerHTML = messageRowHtml(msg, false, grouped);
   wireMessageActions(div, msg, false);
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -946,13 +981,15 @@ function startEditMessage(div, msg, isDm) {
 function updateMessageReactions(msg) {
   const div = messagesEl.querySelector(`.msg[data-id="${msg.id}"]`);
   if (!div) return;
-  div.innerHTML = messageRowHtml(msg, false);
+  const grouped = div.classList.contains("grouped");
+  div.innerHTML = messageRowHtml(msg, false, grouped);
   wireMessageActions(div, msg, false);
 }
 function updateDmMessage(msg) {
   const div = messagesEl.querySelector(`.msg[data-id="${msg.id}"]`);
   if (!div) return;
-  div.innerHTML = messageRowHtml(msg, true);
+  const grouped = div.classList.contains("grouped");
+  div.innerHTML = messageRowHtml(msg, true, grouped);
   wireMessageActions(div, msg, true);
 }
 
@@ -1017,6 +1054,7 @@ function openCreateEmojiFlow() {
 }
 
 function appendSystemMessage(text) {
+  lastMsgAuthor = null;
   const div = document.createElement("div");
   div.className = "msg system";
   div.textContent = text;
@@ -1029,20 +1067,37 @@ let lastOnlineUsers = [];
 function renderMemberList(users) {
   lastMemberList = users || [];
   memberItems.innerHTML = "";
-  lastMemberList.forEach((u) => {
-    const li = document.createElement("li");
-    const roleBadge = myRole === "owner" && u.username !== username
-      ? `<button class="role-toggle-btn" data-tooltip="Tornar moderador ou membro">${ICONS.shield}</button>` : "";
-    li.innerHTML = `${avatarWithStatusHtml(u.username, u.avatar, 26, u.status)}<span class="member-name">${escapeHtml(u.username)}</span>${roleBadge}`;
-    li.querySelector(".member-name").addEventListener("click", () => { if (u.username !== username) openDm(u.username); });
-    const roleBtn = li.querySelector(".role-toggle-btn");
-    if (roleBtn) roleBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const newRole = prompt(`Cargo de ${u.username} nesse servidor: digite "moderator" ou "member"`, "moderator");
-      if (newRole === "moderator" || newRole === "member") socket.emit("set-member-role", { targetUsername: u.username, role: newRole, serverId: currentServerId });
+
+  const owners = lastMemberList.filter((u) => u.role === "owner");
+  const moderators = lastMemberList.filter((u) => u.role === "moderator");
+  const members = lastMemberList.filter((u) => !u.role || u.role === "member");
+
+  const renderGroup = (label, list) => {
+    if (!list.length) return;
+    const header = document.createElement("li");
+    header.className = "member-group-header";
+    header.textContent = `${label} — ${list.length}`;
+    memberItems.appendChild(header);
+    list.forEach((u) => {
+      const li = document.createElement("li");
+      const roleBadge = myRole === "owner" && u.username !== username
+        ? `<button class="role-toggle-btn" data-tooltip="Tornar moderador ou membro">${ICONS.shield}</button>` : "";
+      li.innerHTML = `${avatarWithStatusHtml(u.username, u.avatar, 26, u.status)}<span class="member-name">${escapeHtml(u.username)}</span>${roleBadge}`;
+      li.querySelector(".member-name").addEventListener("click", () => { if (u.username !== username) openDm(u.username); });
+      const roleBtn = li.querySelector(".role-toggle-btn");
+      if (roleBtn) roleBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const newRole = prompt(`Cargo de ${u.username} nesse servidor: digite "moderator" ou "member"`, "moderator");
+        if (newRole === "moderator" || newRole === "member") socket.emit("set-member-role", { targetUsername: u.username, role: newRole, serverId: currentServerId });
+      });
+      memberItems.appendChild(li);
     });
-    memberItems.appendChild(li);
-  });
+  };
+
+  renderGroup("Dono", owners);
+  renderGroup("Moderadores", moderators);
+  renderGroup("Membros", members);
+
   onlineCount.textContent = lastMemberList.length;
 }
 
@@ -1061,6 +1116,7 @@ function renderDmList(users) {
 function openDm(withUsername) {
   currentDmUser = withUsername;
   currentChannel = null;
+  lastMsgAuthor = null; lastMsgTime = 0;
   unreadDms.delete(withUsername);
   renderDmList(lastOnlineUsers);
   currentChannelName.textContent = "@" + withUsername;
@@ -1073,12 +1129,14 @@ function openDm(withUsername) {
   renderChannelLists();
   socket.emit("dm-open", { withUsername });
 }
-function renderDmHistory(messages) { messagesEl.innerHTML = ""; messages.forEach(appendDmMessage); }
+function renderDmHistory(messages) { messagesEl.innerHTML = ""; lastMsgAuthor = null; lastMsgTime = 0; messages.forEach(appendDmMessage); }
 function appendDmMessage(msg) {
+  const grouped = msg.from === lastMsgAuthor && (msg.timestamp - lastMsgTime) < GROUP_WINDOW_MS;
+  lastMsgAuthor = msg.from; lastMsgTime = msg.timestamp;
   const div = document.createElement("div");
-  div.className = "msg";
+  div.className = "msg" + (grouped ? " grouped" : "");
   div.dataset.id = msg.id;
-  div.innerHTML = messageRowHtml(msg, true);
+  div.innerHTML = messageRowHtml(msg, true, grouped);
   wireMessageActions(div, msg, true);
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
