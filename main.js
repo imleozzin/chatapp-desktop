@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, desktopCapturer } = require("electron");
+const { app, BrowserWindow, ipcMain, desktopCapturer, Menu } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { autoUpdater } = require("electron-updater");
@@ -29,7 +29,8 @@ function createWindow() {
     height: 780,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: "#1e1f22",
+    backgroundColor: "#191428",
+    frame: false, // sem a barra/menu nativo do Windows — usamos uma barra própria
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -39,7 +40,19 @@ function createWindow() {
 
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
   mainWindow = win;
+
+  win.on("maximize", () => win.webContents.send("window-maximized", true));
+  win.on("unmaximize", () => win.webContents.send("window-maximized", false));
 }
+
+Menu.setApplicationMenu(null); // remove o menu File/Edit/View/Window/Help
+
+ipcMain.on("window-minimize", () => mainWindow?.minimize());
+ipcMain.on("window-maximize-toggle", () => {
+  if (!mainWindow) return;
+  mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
+});
+ipcMain.on("window-close", () => mainWindow?.close());
 
 // ---------- Auto-update ----------
 autoUpdater.on("update-downloaded", () => {

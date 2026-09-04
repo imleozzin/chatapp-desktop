@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>ChatApp</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Barra de título própria (substitui a barra padrão do Windows) -->
+  <div id="titlebar" class="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-title">ChatApp</span>
+    </div>
+    <div class="titlebar-controls">
+      <button id="win-minimize" class="titlebar-btn" data-tooltip="Minimizar"><svg viewBox="0 0 12 12" width="11" height="11"><rect x="1" y="5.5" width="10" height="1.2" fill="currentColor"/></svg></button>
+      <button id="win-maximize" class="titlebar-btn" data-tooltip="Maximizar"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.1"><rect x="1.5" y="1.5" width="9" height="9"/></svg></button>
+      <button id="win-close" class="titlebar-btn titlebar-close" data-tooltip="Fechar"><svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.2"><line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/></svg></button>
+    </div>
+  </div>
+
+  <!-- Tela de login -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <h1>ChatApp</h1>
+      <p class="subtitle">Escolha um nome e uma foto para entrar</p>
+
+      <div class="login-avatar-picker">
+        <div id="login-avatar-preview" class="login-avatar-preview">?</div>
+        <input id="login-avatar-input" type="file" accept="image/*" class="hidden" />
+        <button id="login-avatar-btn" type="button" class="ghost-btn">Escolher foto</button>
+      </div>
+
+      <input id="username-input" type="text" placeholder="Seu nome" maxlength="24" autofocus />
+      <button id="join-btn">Entrar</button>
+      <p id="login-error" class="login-error"></p>
+    </div>
+  </div>
+
+  <!-- App principal -->
+  <div id="app" class="app hidden">
+    <nav class="channel-rail">
+      <div id="server-icons" class="server-icons"></div>
+      <button id="add-server-btn" class="server-icon add-server" data-tooltip="Adicionar servidor" data-tooltip-side="right">+</button>
+    </nav>
+
+    <aside class="channel-list">
+      <div class="channel-list-header">
+        <span id="current-server-name">ChatApp</span>
+        <button id="invite-btn" class="icon-btn hidden" data-tooltip="Convidar pessoas">👤+</button>
+      </div>
+
+      <div class="section-header">
+        <span>Canais de Texto</span>
+        <span>
+          <button id="add-category-btn" class="icon-btn hidden" data-tooltip="Criar categoria">📁+</button>
+          <button id="add-text-channel" class="icon-btn hidden" data-tooltip="Criar canal de texto">+</button>
+        </span>
+      </div>
+      <ul id="text-channels" class="channel-items"></ul>
+
+      <div class="section-header">
+        <span>Canais de Voz</span>
+        <button id="add-voice-channel" class="icon-btn hidden" data-tooltip="Criar canal de voz">+</button>
+      </div>
+      <ul id="voice-channels" class="channel-items"></ul>
+
+      <div class="section-header">
+        <span>Mensagens Diretas</span>
+      </div>
+      <ul id="dm-list" class="channel-items"></ul>
+
+      <div id="voice-bar" class="voice-bar hidden">
+        <div class="voice-bar-status">
+          <span class="voice-bar-dot"></span>
+          <div class="voice-bar-text">
+            <span id="voice-bar-channel" class="voice-bar-channel">Geral</span>
+            <span class="voice-bar-sub">Voz conectada</span>
+          </div>
+          <div class="voice-bar-controls">
+            <button id="mute-btn" class="voice-bar-btn" data-tooltip="Mutar microfone" data-tooltip-side="right"></button>
+            <button id="camera-btn" class="voice-bar-btn" data-tooltip="Ativar câmera" data-tooltip-side="right"></button>
+            <button id="deafen-btn" class="voice-bar-btn" data-tooltip="Ensurdecer (mutar tudo)" data-tooltip-side="right"></button>
+            <button id="leave-voice-btn" class="voice-bar-btn leave-btn" data-tooltip="Sair da chamada" data-tooltip-side="right"></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="user-footer">
+        <div class="avatar-with-status">
+          <div id="my-avatar" class="avatar">?</div>
+          <span id="my-status-dot" class="status-dot status-online"></span>
+        </div>
+        <span id="my-username"></span>
+        <button id="update-btn" class="icon-btn update-btn hidden" data-tooltip="Atualização pronta — clique para instalar" data-tooltip-side="right">⬆️</button>
+        <button id="settings-btn" class="icon-btn footer-settings" data-tooltip="Configurações" data-tooltip-side="right">⚙</button>
+      </div>
+    </aside>
+
+    <main class="chat-area">
+      <header class="chat-header">
+        <span id="current-channel-name">#geral</span>
+        <div class="header-actions">
+          <button id="search-btn" class="icon-btn" data-tooltip="Buscar mensagens">🔍</button>
+          <button id="pinned-btn" class="icon-btn" data-tooltip="Mensagens fixadas">📌</button>
+          <button id="share-btn" class="share-btn" data-tooltip="Compartilhar sua tela">🖥️ Compartilhar tela</button>
+        </div>
+      </header>
+
+      <div id="search-bar" class="search-bar hidden">
+        <input id="search-input" type="text" placeholder="Buscar nesse canal..." />
+        <button id="search-close" class="icon-btn" data-tooltip="Fechar busca">✕</button>
+      </div>
+      <div id="search-results" class="search-results hidden"></div>
+
+      <div id="screen-share-banner" class="screen-share-banner hidden"></div>
+      <div id="remote-video-wrap" class="remote-video-wrap hidden">
+        <video id="remote-video" class="remote-video" autoplay playsinline></video>
+        <button id="fullscreen-btn" class="fullscreen-btn" data-tooltip="Tela cheia"></button>
+      </div>
+
+      <div id="voice-panel" class="voice-panel hidden">
+        <div class="voice-panel-title">Conectado à voz</div>
+        <div id="voice-members-list" class="voice-members-list"></div>
+      </div>
+
+      <div id="video-grid" class="video-grid hidden"></div>
+
+      <div id="messages" class="messages"></div>
+      <div id="typing-indicator" class="typing-indicator hidden"></div>
+
+      <div id="reply-preview" class="reply-preview hidden">
+        <span id="reply-preview-text"></span>
+        <button id="reply-cancel" class="icon-btn"></button>
+      </div>
+
+      <div id="attachment-preview" class="attachment-preview hidden">
+        <span id="attachment-name"></span>
+        <button id="attachment-remove" class="icon-btn" data-tooltip="Remover anexo">✕</button>
+      </div>
+
+      <form id="message-form" class="message-form">
+        <button id="attach-btn" type="button" class="icon-btn attach-icon" data-tooltip="Anexar arquivo"></button>
+        <div class="message-input-wrap">
+          <input id="message-input" type="text" placeholder="Enviar mensagem..." autocomplete="off" />
+          <div id="autocomplete-list" class="autocomplete-list hidden"></div>
+        </div>
+        <button id="emoji-btn" type="button" class="icon-btn emoji-icon" data-tooltip="Emojis"></button>
+        <input id="file-input" type="file" class="hidden" />
+      </form>
+    </main>
+
+    <aside class="member-list">
+      <div class="member-list-header">Online — <span id="online-count">0</span></div>
+      <ul id="member-items"></ul>
+    </aside>
+  </div>
+
+  <!-- Modal: configurações -->
+  <div id="settings-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2>Configurações</h2>
+
+      <label class="field-label">Status</label>
+      <select id="settings-status-select" class="modal-input">
+        <option value="online">🟢 Online</option>
+        <option value="away">🌙 Ausente</option>
+        <option value="busy">⛔ Ocupado</option>
+        <option value="offline">⚫ Aparecer offline</option>
+      </select>
+
+      <label class="checkbox-label">
+        <input id="settings-notifications-checkbox" type="checkbox" />
+        Mostrar notificações de novas mensagens
+      </label>
+
+      <label class="field-label">Endereço do servidor</label>
+      <input id="settings-server-input" type="text" class="modal-input" />
+      <div class="modal-actions space-between">
+        <button id="settings-logout" class="danger-btn">Sair da conta</button>
+        <div style="display:flex; gap:8px;">
+          <button id="settings-cancel" class="ghost-btn">Cancelar</button>
+          <button id="settings-save" class="primary-btn">Salvar e reconectar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: criar canal -->
+  <div id="create-channel-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2 id="create-channel-title">Criar canal</h2>
+      <label class="field-label">Nome do canal</label>
+      <input id="create-channel-input" type="text" class="modal-input" maxlength="32" />
+      <label class="field-label" id="create-channel-category-label">Categoria (opcional)</label>
+      <select id="create-channel-category" class="modal-input">
+        <option value="">Sem categoria</option>
+      </select>
+      <label class="checkbox-label">
+        <input id="create-channel-private" type="checkbox" />
+        Canal privado (só quem eu convidar consegue ver)
+      </label>
+      <div id="create-channel-invite-wrap" class="hidden">
+        <label class="field-label">Convidar (nomes separados por vírgula)</label>
+        <input id="create-channel-invite-input" type="text" class="modal-input" placeholder="ex: joao, maria" />
+      </div>
+      <div class="modal-actions">
+        <button id="create-channel-cancel" class="ghost-btn">Cancelar</button>
+        <button id="create-channel-confirm" class="primary-btn">Criar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: adicionar servidor (criar ou entrar com código) -->
+  <div id="add-server-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2>Adicionar servidor</h2>
+
+      <label class="field-label">Criar um servidor novo</label>
+      <input id="new-server-name-input" type="text" class="modal-input" placeholder="Nome do servidor" maxlength="40" />
+      <button id="create-server-confirm" class="primary-btn full-width">Criar servidor</button>
+
+      <div class="modal-divider">ou</div>
+
+      <label class="field-label">Entrar com um código de convite</label>
+      <input id="join-server-code-input" type="text" class="modal-input" placeholder="Ex: ab12-cd34" />
+      <button id="join-server-confirm" class="primary-btn full-width">Entrar</button>
+      <p id="join-server-error" class="login-error"></p>
+
+      <div class="modal-actions">
+        <button id="add-server-cancel" class="ghost-btn">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: mostrar código de convite -->
+  <div id="invite-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2>Convide seus amigos</h2>
+      <p class="subtitle" style="text-align:left; margin-bottom:10px;">Compartilhe esse código. A pessoa clica no "+" na barra lateral, na aba "Entrar com um código de convite".</p>
+      <input id="invite-code-display" type="text" class="modal-input" readonly />
+      <div class="modal-actions">
+        <button id="invite-close" class="primary-btn">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: mensagens fixadas -->
+  <div id="pinned-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2>Mensagens fixadas</h2>
+      <div id="pinned-list" class="pinned-list"></div>
+      <div class="modal-actions">
+        <button id="pinned-close" class="primary-btn">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Picker de emoji simples -->
+  <div id="emoji-picker" class="emoji-picker hidden"></div>
+
+  <script src="../node_modules/socket.io-client/dist/socket.io.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
