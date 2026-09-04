@@ -32,6 +32,12 @@ const ICONS = {
   chevron: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
   inbox: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
   help: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  friends: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  mail: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>',
+  channelPlus: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="12" y1="3" x2="12" y2="21"/></svg>',
+  image: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+  logout: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+  check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
 };
 
 
@@ -92,7 +98,6 @@ const loginAvatarPreview = document.getElementById("login-avatar-preview");
 const serverIconsEl = document.getElementById("server-icons");
 const addServerBtn = document.getElementById("add-server-btn");
 const currentServerNameEl = document.getElementById("current-server-name");
-const inviteBtn = document.getElementById("invite-btn");
 
 const textChannelsEl = document.getElementById("text-channels");
 const voiceChannelsEl = document.getElementById("voice-channels");
@@ -153,7 +158,6 @@ let pendingChannelType = "text";
 
 const addTextChannelBtn = document.getElementById("add-text-channel");
 const addVoiceChannelBtn = document.getElementById("add-voice-channel");
-const addCategoryBtn = document.getElementById("add-category-btn");
 
 const addServerOverlay = document.getElementById("add-server-overlay");
 const newServerNameInput = document.getElementById("new-server-name-input");
@@ -302,6 +306,128 @@ helpBtn.addEventListener("click", async () => {
 });
 aboutClose.addEventListener("click", () => aboutOverlay.classList.add("hidden"));
 
+// ---------- Amigos ----------
+let friendsData = { friends: [], incoming: [], outgoing: [] };
+const friendsRailBtn = document.getElementById("friends-rail-btn");
+const friendsOverlay = document.getElementById("friends-overlay");
+const friendsCloseBtn = document.getElementById("friends-close");
+const pendingCountEl = document.getElementById("pending-count");
+const friendsListEl = document.getElementById("friends-list");
+const friendsPendingListEl = document.getElementById("friends-pending-list");
+const addFriendInput = document.getElementById("add-friend-input");
+const addFriendConfirm = document.getElementById("add-friend-confirm");
+const addFriendError = document.getElementById("add-friend-error");
+
+friendsRailBtn.addEventListener("click", () => { friendsOverlay.classList.remove("hidden"); socket.emit("get-friends"); });
+friendsCloseBtn.addEventListener("click", () => friendsOverlay.classList.add("hidden"));
+
+document.querySelectorAll(".friends-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".friends-tab").forEach((t) => t.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelectorAll(".friends-tab-content").forEach((c) => c.classList.add("hidden"));
+    document.getElementById(`friends-tab-${tab.dataset.tab}`).classList.remove("hidden");
+  });
+});
+
+function renderFriends() {
+  pendingCountEl.textContent = friendsData.incoming.length;
+  pendingCountEl.classList.toggle("hidden", !friendsData.incoming.length);
+
+  friendsListEl.innerHTML = friendsData.friends.length
+    ? friendsData.friends.map((f) => `
+        <div class="friend-row" data-username="${escapeHtml(f)}">
+          ${avatarHtml(f, null, 32)}
+          <span class="friend-name">${escapeHtml(f)}</span>
+          <button class="ghost-btn friend-msg-btn">Mensagem</button>
+          <button class="icon-btn friend-remove-btn" data-tooltip="Remover amigo">${ICONS.x}</button>
+        </div>`).join("")
+    : `<div class="friend-row" style="opacity:0.6;">Você ainda não tem amigos adicionados.</div>`;
+
+  const pendingHtml = [
+    ...friendsData.incoming.map((f) => `
+      <div class="friend-row" data-username="${escapeHtml(f)}">
+        ${avatarHtml(f, null, 32)}
+        <span class="friend-name">${escapeHtml(f)} <small style="color:var(--text-muted)">quer ser seu amigo</small></span>
+        <button class="icon-btn friend-accept-btn" data-tooltip="Aceitar">${ICONS.check}</button>
+        <button class="icon-btn friend-decline-btn" data-tooltip="Recusar">${ICONS.x}</button>
+      </div>`),
+    ...friendsData.outgoing.map((f) => `
+      <div class="friend-row" data-username="${escapeHtml(f)}" style="opacity:0.7;">
+        ${avatarHtml(f, null, 32)}
+        <span class="friend-name">${escapeHtml(f)} <small style="color:var(--text-muted)">pedido enviado</small></span>
+      </div>`),
+  ].join("");
+  friendsPendingListEl.innerHTML = pendingHtml || `<div class="friend-row" style="opacity:0.6;">Nenhum pedido pendente.</div>`;
+}
+
+friendsListEl.addEventListener("click", (e) => {
+  const row = e.target.closest(".friend-row");
+  if (!row) return;
+  const uname = row.dataset.username;
+  if (e.target.closest(".friend-msg-btn")) { openDm(uname); friendsOverlay.classList.add("hidden"); }
+  else if (e.target.closest(".friend-remove-btn")) { if (confirm(`Remover ${uname} dos seus amigos?`)) socket.emit("remove-friend", { friendUsername: uname }); }
+});
+friendsPendingListEl.addEventListener("click", (e) => {
+  const row = e.target.closest(".friend-row");
+  if (!row) return;
+  const uname = row.dataset.username;
+  if (e.target.closest(".friend-accept-btn")) socket.emit("respond-friend-request", { fromUsername: uname, accept: true });
+  else if (e.target.closest(".friend-decline-btn")) socket.emit("respond-friend-request", { fromUsername: uname, accept: false });
+});
+addFriendConfirm.addEventListener("click", () => {
+  const uname = addFriendInput.value.trim();
+  addFriendError.textContent = "";
+  if (!uname) return;
+  if (uname === username) { addFriendError.textContent = "Esse é você :)"; return; }
+  socket.emit("send-friend-request", { toUsername: uname });
+  addFriendInput.value = "";
+  addFriendError.textContent = "Pedido enviado (se o nome existir).";
+});
+
+// ---------- Cartão de perfil ----------
+const myProfileBtn = document.getElementById("my-profile-btn");
+const profileCard = document.getElementById("profile-card");
+const profileCardAvatar = document.getElementById("profile-card-avatar");
+const profileCardName = document.getElementById("profile-card-name");
+const profileCardStatus = document.getElementById("profile-card-status");
+const profileCardAvatarEdit = document.getElementById("profile-card-avatar-edit");
+const profileCardSettings = document.getElementById("profile-card-settings");
+const profileCardLogout = document.getElementById("profile-card-logout");
+
+myProfileBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  profileCardName.textContent = username;
+  profileCardAvatar.innerHTML = myAvatar ? `<img class="avatar-img" style="width:100%;height:100%" src="${myAvatar}" />` : escapeHtml(username[0]?.toUpperCase() || "?");
+  profileCardAvatar.style.background = myAvatar ? "transparent" : colorForUsername(username);
+  profileCardStatus.value = myStatus;
+  profileCard.classList.toggle("hidden");
+});
+document.addEventListener("click", (e) => { if (!e.target.closest("#profile-card") && !e.target.closest("#my-profile-btn")) profileCard.classList.add("hidden"); });
+
+profileCardAvatarEdit.addEventListener("click", async () => {
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = "image/*";
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    myAvatar = await readAndResizeImage(file);
+    renderMyAvatar();
+    socket.emit("update-avatar", myAvatar);
+    window.electronAPI.setConfig({ avatarDataUrl: myAvatar });
+    profileCardAvatar.innerHTML = `<img class="avatar-img" style="width:100%;height:100%" src="${myAvatar}" />`;
+    profileCardAvatar.style.background = "transparent";
+  };
+  input.click();
+});
+profileCardStatus.addEventListener("change", () => {
+  myStatus = profileCardStatus.value;
+  socket.emit("set-status", { status: myStatus });
+  updateMyStatusDot();
+});
+profileCardSettings.addEventListener("click", () => { profileCard.classList.add("hidden"); settingsBtn.click(); });
+profileCardLogout.addEventListener("click", () => settingsLogout.click());
+
 // ---------- Início: tenta login salvo ----------
 (async function initAuth() {
   const config = await window.electronAPI.getConfig();
@@ -361,6 +487,7 @@ async function connectToServer() {
   });
   socket.on("server-created", ({ serverId }) => selectServer(serverId));
   socket.on("join-server-error", (msg) => { joinServerError.textContent = msg; });
+  socket.on("friends-list", (data) => { friendsData = data; renderFriends(); });
   socket.on("server-icon-updated", ({ serverId, icon }) => {
     const srv = myServers.find((s) => s.id === serverId);
     if (srv) srv.icon = icon;
@@ -515,7 +642,7 @@ function applyStaticIcons() {
   const map = {
     "pinned-btn": ICONS.pin, "inbox-btn": ICONS.inbox, "help-btn": ICONS.help, "attach-btn": ICONS.attach,
     "emoji-btn": ICONS.smile, "settings-btn": ICONS.settings, "update-btn": ICONS.update,
-    "add-text-channel": ICONS.plus, "add-voice-channel": ICONS.plus, "add-category-btn": ICONS.folderPlus,
+    "add-text-channel": ICONS.plus, "add-voice-channel": ICONS.plus,
     "add-server-btn": ICONS.plus, "mute-btn": ICONS.mic, "deafen-btn": ICONS.headphones,
     "leave-voice-btn": ICONS.phoneOff, "camera-btn": ICONS.camera, "attachment-remove": ICONS.x, "reply-cancel": ICONS.x,
     "fullscreen-btn": ICONS.maximize,
@@ -523,10 +650,16 @@ function applyStaticIcons() {
   Object.entries(map).forEach(([id, svg]) => { const el = document.getElementById(id); if (el) el.innerHTML = svg; });
   const searchIcon = document.querySelector(".header-search-icon");
   if (searchIcon) searchIcon.innerHTML = ICONS.search;
-  const invite = document.getElementById("invite-btn");
-  if (invite) invite.innerHTML = ICONS.userPlus;
   const share = document.getElementById("share-btn");
   if (share) share.innerHTML = ICONS.monitor;
+  const friendsBtn = document.getElementById("friends-rail-btn");
+  if (friendsBtn) friendsBtn.innerHTML = ICONS.friends;
+  const chevrons = document.querySelectorAll(".server-chevron");
+  chevrons.forEach((c) => (c.innerHTML = ICONS.chevron));
+  const menuIcons = { "menu-invite": ICONS.mail, "menu-create-channel": ICONS.channelPlus, "menu-create-category": ICONS.folderPlus, "menu-change-icon": ICONS.image, "menu-leave-server": ICONS.logout };
+  Object.entries(menuIcons).forEach(([id, svg]) => { const el = document.querySelector(`#${id} span`); if (el) el.innerHTML = svg; });
+  const friendsClose = document.getElementById("friends-close");
+  if (friendsClose) friendsClose.innerHTML = ICONS.x;
 }
 applyStaticIcons();
 
@@ -537,21 +670,6 @@ function renderMyAvatar() {
   myAvatarEl.style.background = myAvatar ? "transparent" : colorForUsername(username);
 }
 function updateMyStatusDot() { myStatusDot.className = "status-dot status-" + myStatus; }
-
-myAvatarEl.addEventListener("click", async () => {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "image/*";
-  input.onchange = async () => {
-    const file = input.files[0];
-    if (!file) return;
-    myAvatar = await readAndResizeImage(file);
-    renderMyAvatar();
-    socket.emit("update-avatar", myAvatar);
-    window.electronAPI.setConfig({ avatarDataUrl: myAvatar });
-  };
-  input.click();
-});
 
 // ---------- Autocompletar @menção e :emoji: ----------
 let autocompleteMatches = [];
@@ -674,14 +792,6 @@ function renderServerIcons() {
     div.innerHTML = srv.icon ? `<img src="${srv.icon}" />` : escapeHtml(srv.name[0].toUpperCase());
     div.title = srv.name;
     div.addEventListener("click", () => selectServer(srv.id));
-    if (srv.inviteCode) {
-      const pencil = document.createElement("div");
-      pencil.className = "server-icon-edit";
-      pencil.innerHTML = ICONS.pencil;
-      pencil.dataset.tooltip = "Trocar ícone do servidor";
-      pencil.addEventListener("click", (e) => { e.stopPropagation(); editServerIcon(srv.id); });
-      div.appendChild(pencil);
-    }
     serverIconsEl.appendChild(div);
   });
 }
@@ -705,7 +815,6 @@ function selectServer(serverId) {
   categories = [];
   const srv = myServers.find((s) => s.id === serverId);
   currentServerNameEl.textContent = srv ? srv.name : "ChatApp";
-  inviteBtn.classList.toggle("hidden", !(srv && srv.inviteCode));
   messagesEl.innerHTML = "";
   renderServerIcons();
   socket.emit("select-server", { serverId });
@@ -731,19 +840,46 @@ joinServerConfirm.addEventListener("click", () => {
   addServerOverlay.classList.add("hidden");
 });
 
-inviteBtn.addEventListener("click", () => {
+inviteClose.addEventListener("click", () => inviteOverlay.classList.add("hidden"));
+
+// ---------- Menu dropdown do servidor ----------
+const serverNameBtn = document.getElementById("server-name-btn");
+const serverDropdown = document.getElementById("server-dropdown");
+serverNameBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  serverDropdown.classList.toggle("hidden");
+});
+document.addEventListener("click", (e) => { if (!e.target.closest(".channel-list-header")) serverDropdown.classList.add("hidden"); });
+
+document.getElementById("menu-invite").addEventListener("click", () => {
   const srv = myServers.find((s) => s.id === currentServerId);
   if (!srv || !srv.inviteCode) return;
   inviteCodeDisplay.value = srv.inviteCode;
   inviteOverlay.classList.remove("hidden");
+  serverDropdown.classList.add("hidden");
 });
-inviteClose.addEventListener("click", () => inviteOverlay.classList.add("hidden"));
-
-// ---------- Categorias ----------
-addCategoryBtn.addEventListener("click", () => {
+document.getElementById("menu-create-channel").addEventListener("click", () => { openCreateChannelModal("text"); serverDropdown.classList.add("hidden"); });
+document.getElementById("menu-create-category").addEventListener("click", () => {
   const name = prompt("Nome da nova categoria:");
   if (name && name.trim()) socket.emit("create-category", { name: name.trim(), serverId: currentServerId });
+  serverDropdown.classList.add("hidden");
 });
+document.getElementById("menu-change-icon").addEventListener("click", () => { editServerIcon(currentServerId); serverDropdown.classList.add("hidden"); });
+document.getElementById("menu-leave-server").addEventListener("click", () => {
+  if (confirm("Tem certeza que quer sair desse servidor?")) socket.emit("leave-server", { serverId: currentServerId });
+  serverDropdown.classList.add("hidden");
+});
+
+function updateServerMenuVisibility() {
+  const isOwner = myRole === "owner";
+  document.getElementById("menu-invite").classList.toggle("hidden", !isOwner);
+  document.getElementById("menu-create-channel").classList.toggle("hidden", !isOwner);
+  document.getElementById("menu-create-category").classList.toggle("hidden", !isOwner);
+  document.getElementById("menu-change-icon").classList.toggle("hidden", !isOwner);
+  document.getElementById("menu-leave-server").classList.toggle("hidden", isOwner || currentServerId === "default-server");
+}
+
+// ---------- Categorias ----------
 function populateCategorySelect() {
   createChannelCategorySelect.innerHTML = `<option value="">Sem categoria</option>` +
     categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
@@ -754,7 +890,7 @@ function updateRoleUI() {
   const isOwner = myRole === "owner";
   addTextChannelBtn.classList.toggle("hidden", !isOwner);
   addVoiceChannelBtn.classList.toggle("hidden", !isOwner);
-  addCategoryBtn.classList.toggle("hidden", !isOwner);
+  updateServerMenuVisibility();
   renderChannelLists();
   renderMemberList(lastMemberList);
 }

@@ -40,20 +40,31 @@
   <!-- App principal -->
   <div id="app" class="app hidden">
     <nav class="channel-rail">
+      <button id="friends-rail-btn" class="server-icon friends-rail-btn" data-tooltip="Amigos" data-tooltip-side="right"></button>
+      <div class="rail-divider"></div>
       <div id="server-icons" class="server-icons"></div>
       <button id="add-server-btn" class="server-icon add-server" data-tooltip="Adicionar servidor" data-tooltip-side="right">+</button>
     </nav>
 
     <aside class="channel-list">
       <div class="channel-list-header">
-        <span id="current-server-name">ChatApp</span>
-        <button id="invite-btn" class="icon-btn hidden" data-tooltip="Convidar pessoas">👤+</button>
+        <button id="server-name-btn" class="server-name-btn">
+          <span id="current-server-name">ChatApp</span>
+          <span class="server-chevron"></span>
+        </button>
+        <div id="server-dropdown" class="server-dropdown hidden">
+          <button id="menu-invite" class="server-dropdown-item"><span></span>Convidar para o servidor</button>
+          <button id="menu-create-channel" class="server-dropdown-item"><span></span>Criar canal</button>
+          <button id="menu-create-category" class="server-dropdown-item"><span></span>Criar categoria</button>
+          <button id="menu-change-icon" class="server-dropdown-item"><span></span>Trocar ícone do servidor</button>
+          <div class="server-dropdown-divider"></div>
+          <button id="menu-leave-server" class="server-dropdown-item danger"><span></span>Sair do servidor</button>
+        </div>
       </div>
 
       <div class="section-header">
         <span>Canais de Texto</span>
         <span>
-          <button id="add-category-btn" class="icon-btn hidden" data-tooltip="Criar categoria">📁+</button>
           <button id="add-text-channel" class="icon-btn hidden" data-tooltip="Criar canal de texto">+</button>
         </span>
       </div>
@@ -88,13 +99,36 @@
       </div>
 
       <div class="user-footer">
-        <div class="avatar-with-status">
-          <div id="my-avatar" class="avatar">?</div>
-          <span id="my-status-dot" class="status-dot status-online"></span>
-        </div>
-        <span id="my-username"></span>
+        <button id="my-profile-btn" class="my-profile-btn">
+          <div class="avatar-with-status">
+            <div id="my-avatar" class="avatar">?</div>
+            <span id="my-status-dot" class="status-dot status-online"></span>
+          </div>
+          <span id="my-username"></span>
+        </button>
         <button id="update-btn" class="icon-btn update-btn hidden" data-tooltip="Atualização pronta — clique para instalar" data-tooltip-side="right">⬆️</button>
         <button id="settings-btn" class="icon-btn footer-settings" data-tooltip="Configurações" data-tooltip-side="right">⚙</button>
+      </div>
+
+      <div id="profile-card" class="profile-card hidden">
+        <div class="profile-card-header">
+          <div id="profile-card-avatar" class="avatar profile-card-avatar">?</div>
+          <div>
+            <div id="profile-card-name" class="profile-card-name"></div>
+            <button id="profile-card-avatar-edit" class="ghost-btn" style="margin-top:6px;">Trocar foto</button>
+          </div>
+        </div>
+        <label class="field-label" style="margin-top:14px;">Status</label>
+        <select id="profile-card-status" class="modal-input">
+          <option value="online">🟢 Online</option>
+          <option value="away">🌙 Ausente</option>
+          <option value="busy">⛔ Ocupado</option>
+          <option value="offline">⚫ Aparecer offline</option>
+        </select>
+        <div class="modal-actions">
+          <button id="profile-card-settings" class="ghost-btn">Configurações</button>
+          <button id="profile-card-logout" class="danger-btn">Sair da conta</button>
+        </div>
       </div>
     </aside>
 
@@ -257,6 +291,35 @@
       <div id="pinned-list" class="pinned-list"></div>
       <div class="modal-actions">
         <button id="pinned-close" class="primary-btn">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: amigos -->
+  <div id="friends-overlay" class="picker-overlay hidden">
+    <div class="picker-modal friends-modal">
+      <div class="friends-tabs">
+        <button class="friends-tab active" data-tab="all">Todos</button>
+        <button class="friends-tab" data-tab="pending">Pendentes <span id="pending-count" class="friends-tab-count hidden">0</span></button>
+        <button class="friends-tab" data-tab="add">Adicionar amigo</button>
+        <button id="friends-close" class="icon-btn" style="margin-left:auto;"></button>
+      </div>
+
+      <div id="friends-tab-all" class="friends-tab-content">
+        <div id="friends-list" class="friends-list"></div>
+      </div>
+
+      <div id="friends-tab-pending" class="friends-tab-content hidden">
+        <div id="friends-pending-list" class="friends-list"></div>
+      </div>
+
+      <div id="friends-tab-add" class="friends-tab-content hidden">
+        <label class="field-label">Nome de usuário</label>
+        <div style="display:flex; gap:8px;">
+          <input id="add-friend-input" type="text" class="modal-input" placeholder="Digite o nome exato" style="margin-bottom:0;" />
+          <button id="add-friend-confirm" class="primary-btn">Enviar</button>
+        </div>
+        <p id="add-friend-error" class="login-error"></p>
       </div>
     </div>
   </div>

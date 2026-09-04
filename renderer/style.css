@@ -583,3 +583,79 @@ body { display: flex; flex-direction: column; }
 .inbox-item { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; font-size: 14px; color: var(--text); cursor: pointer; }
 .inbox-item:hover { background: var(--bg-sidebar-hover); }
 .inbox-item .unread-dot { margin-left: 0; }
+
+/* ---------- Rail: botão de amigos e divisor ---------- */
+.friends-rail-btn {
+  width: 48px; height: 48px; border: none; border-radius: 26px;
+  background: var(--bg-sidebar); color: var(--text);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.friends-rail-btn:hover, .friends-rail-btn.active { background: var(--accent); border-radius: 18px; }
+.rail-divider { width: 32px; height: 2px; background: var(--line); border-radius: 1px; margin: 2px 0; }
+
+/* ---------- Menu dropdown do servidor ---------- */
+.channel-list-header { position: relative; }
+.server-name-btn {
+  display: flex; align-items: center; gap: 6px; background: none; border: none;
+  color: var(--text-header); font-size: 15px; font-weight: 600; cursor: pointer;
+  padding: 0; width: 100%; justify-content: space-between;
+}
+.server-chevron { display: flex; color: var(--text-muted); }
+.server-dropdown {
+  position: absolute; top: 44px; left: 8px; right: 8px; z-index: 45;
+  background: #111214; border-radius: 8px; padding: 6px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+}
+.server-dropdown-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  background: none; border: none; color: var(--text); font-size: 13.5px; font-weight: 500;
+  padding: 9px 10px; border-radius: 5px; cursor: pointer;
+}
+.server-dropdown-item span { display: flex; color: var(--text-muted); }
+.server-dropdown-item:hover { background: var(--accent); color: #fff; }
+.server-dropdown-item:hover span { color: #fff; }
+.server-dropdown-item.danger { color: var(--danger); }
+.server-dropdown-item.danger span { color: var(--danger); }
+.server-dropdown-item.danger:hover { background: var(--danger); color: #fff; }
+.server-dropdown-item.danger:hover span { color: #fff; }
+.server-dropdown-item.hidden { display: none; }
+.server-dropdown-divider { height: 1px; background: var(--line); margin: 6px 4px; }
+
+/* ---------- Cartão de perfil ---------- */
+.my-profile-btn {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+  background: none; border: none; cursor: pointer; padding: 4px; border-radius: 6px; text-align: left;
+}
+.my-profile-btn:hover { background: var(--bg-sidebar-hover); }
+.my-profile-btn #my-username { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-card {
+  position: absolute; bottom: 56px; left: 12px; width: 260px; z-index: 50;
+  background: var(--bg-sidebar); border-radius: 10px; padding: 16px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.5); border: 1px solid var(--line);
+}
+.user-footer { position: relative; }
+.profile-card-header { display: flex; align-items: center; gap: 12px; }
+.profile-card-avatar { width: 52px; height: 52px; font-size: 18px; }
+.profile-card-name { font-size: 16px; font-weight: 700; color: var(--text-header); }
+
+/* ---------- Modal de amigos ---------- */
+.friends-modal { width: 480px; }
+.friends-tabs { display: flex; align-items: center; gap: 6px; margin-bottom: 16px; }
+.friends-tab {
+  background: none; border: none; color: var(--text-muted); font-size: 13.5px; font-weight: 600;
+  padding: 8px 12px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+}
+.friends-tab:hover { color: var(--text); }
+.friends-tab.active { background: var(--bg-input); color: var(--text); }
+.friends-tab-count {
+  background: var(--danger); color: #fff; font-size: 10px; font-weight: 700;
+  border-radius: 8px; padding: 1px 6px;
+}
+.friends-list { max-height: 360px; overflow-y: auto; }
+.friend-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.friend-row:hover { background: var(--bg-sidebar-hover); }
+.friend-name { flex: 1; font-size: 14.5px; color: var(--text); }
+.friend-msg-btn { font-size: 12px; padding: 5px 10px; }
