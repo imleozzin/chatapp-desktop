@@ -326,14 +326,16 @@ input, button, select { font-family: var(--font); }
 }
 .voice-bar-status { display: flex; align-items: center; gap: 8px; }
 .voice-bar-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--online); flex-shrink: 0; box-shadow: 0 0 6px var(--online); }
-.voice-bar-text { display: flex; flex-direction: column; min-width: 0; }
+.voice-bar-text { display: flex; flex-direction: column; min-width: 0; flex: 1; overflow: hidden; }
+.voice-bar-channel { overflow: hidden; text-overflow: ellipsis; }
 .voice-bar-channel { font-size: 13px; font-weight: 600; color: var(--online); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .voice-bar-sub { font-size: 11px; color: var(--text-muted); }
-.voice-bar-controls { display: flex; gap: 6px; margin-left: auto; }
+.voice-bar-controls { display: flex; gap: 4px; margin-left: auto; flex-shrink: 0; }
 .voice-bar-btn {
-  width: 32px; height: 32px; border-radius: 8px; border: none;
+  width: 28px; height: 28px; border-radius: 6px; border: none;
   background: var(--bg-input); color: var(--text); font-size: 15px;
   display: flex; align-items: center; justify-content: center; cursor: pointer;
+  flex-shrink: 0;
 }
 .voice-bar-btn:hover { background: #322a4d; }
 .voice-bar-btn.active-toggle { background: var(--danger); color: #fff; }
@@ -547,3 +549,37 @@ body { display: flex; flex-direction: column; }
   letter-spacing: 0.02em; padding: 14px 8px 4px; list-style: none;
 }
 .member-group-header:first-child { padding-top: 0; }
+
+/* ---------- Busca inline no cabeçalho (estilo Discord) ---------- */
+.header-search {
+  display: flex; align-items: center; gap: 6px;
+  background: #1e1f22; border-radius: 6px; padding: 5px 8px;
+  width: 150px; transition: width 0.15s ease;
+}
+.header-search:focus-within { width: 200px; }
+.header-search-icon { display: flex; color: var(--text-muted); flex-shrink: 0; }
+.header-search input {
+  background: transparent; border: none; color: var(--text); font-size: 13px; width: 100%;
+}
+.header-search input:focus { outline: none; }
+.header-search input::placeholder { color: var(--text-muted); }
+
+.search-results {
+  position: absolute; top: 52px; right: 20px; z-index: 40;
+  width: 320px; max-height: 320px; overflow-y: auto;
+  background: var(--bg-sidebar); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.5); padding: 8px;
+}
+.chat-area { position: relative; }
+
+/* ---------- Caixa de entrada (não lidas) ---------- */
+.inbox-panel {
+  position: absolute; top: 52px; right: 20px; z-index: 40;
+  width: 280px; max-height: 360px; overflow-y: auto;
+  background: var(--bg-sidebar); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.5); padding: 12px;
+}
+.inbox-panel-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px; }
+.inbox-item { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; font-size: 14px; color: var(--text); cursor: pointer; }
+.inbox-item:hover { background: var(--bg-sidebar-hover); }
+.inbox-item .unread-dot { margin-left: 0; }

@@ -30,6 +30,8 @@ const ICONS = {
   maximize: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>',
   minimize: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
+  inbox: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  help: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
 };
 
 
@@ -101,7 +103,6 @@ const typingIndicatorEl = document.getElementById("typing-indicator");
 const messageForm = document.getElementById("message-form");
 const messageInput = document.getElementById("message-input");
 const memberItems = document.getElementById("member-items");
-const onlineCount = document.getElementById("online-count");
 const myAvatarEl = document.getElementById("my-avatar");
 const myStatusDot = document.getElementById("my-status-dot");
 const myUsernameEl = document.getElementById("my-username");
@@ -121,10 +122,7 @@ const remoteVideoWrap = document.getElementById("remote-video-wrap");
 const remoteVideo = document.getElementById("remote-video");
 const fullscreenBtn = document.getElementById("fullscreen-btn");
 
-const searchBtn = document.getElementById("search-btn");
-const searchBar = document.getElementById("search-bar");
 const searchInput = document.getElementById("search-input");
-const searchClose = document.getElementById("search-close");
 const searchResultsEl = document.getElementById("search-results");
 
 const pinnedBtn = document.getElementById("pinned-btn");
@@ -269,6 +267,40 @@ document.getElementById("win-close").addEventListener("click", () => window.elec
 window.electronAPI.onWindowMaximized((isMax) => {
   document.getElementById("titlebar").classList.toggle("is-maximized", isMax);
 });
+
+// ---------- Caixa de entrada (não lidas) ----------
+const inboxBtn = document.getElementById("inbox-btn");
+const inboxPanel = document.getElementById("inbox-panel");
+const inboxList = document.getElementById("inbox-list");
+inboxBtn.addEventListener("click", () => {
+  inboxPanel.classList.toggle("hidden");
+  if (!inboxPanel.classList.contains("hidden")) renderInboxList();
+});
+function renderInboxList() {
+  const items = [];
+  channels.filter((c) => c.type === "text" && unreadChannels.has(c.id)).forEach((c) => items.push({ type: "channel", id: c.id, label: "#" + c.name }));
+  [...unreadDms].forEach((u) => items.push({ type: "dm", id: u, label: u }));
+  inboxList.innerHTML = items.length
+    ? items.map((i) => `<div class="inbox-item" data-type="${i.type}" data-id="${escapeHtml(i.id)}"><span class="unread-dot"></span>${escapeHtml(i.label)}</div>`).join("")
+    : `<div class="inbox-item" style="opacity:0.6; cursor:default;">Tudo em dia por aqui.</div>`;
+}
+inboxList.addEventListener("click", (e) => {
+  const item = e.target.closest(".inbox-item");
+  if (!item || !item.dataset.id) return;
+  if (item.dataset.type === "channel") joinChannel(item.dataset.id);
+  else openDm(item.dataset.id);
+  inboxPanel.classList.add("hidden");
+});
+
+// ---------- Sobre o ChatApp ----------
+const helpBtn = document.getElementById("help-btn");
+const aboutOverlay = document.getElementById("about-overlay");
+const aboutClose = document.getElementById("about-close");
+helpBtn.addEventListener("click", async () => {
+  document.getElementById("about-version").textContent = await window.electronAPI.getAppVersion();
+  aboutOverlay.classList.remove("hidden");
+});
+aboutClose.addEventListener("click", () => aboutOverlay.classList.add("hidden"));
 
 // ---------- Início: tenta login salvo ----------
 (async function initAuth() {
@@ -481,18 +513,20 @@ function sendSignal(targetId, data) { socket.emit("rtc-signal", { targetId, data
 // ---------- Aplica os ícones SVG nos botões estáticos ----------
 function applyStaticIcons() {
   const map = {
-    "search-btn": ICONS.search, "pinned-btn": ICONS.pin, "attach-btn": ICONS.attach,
+    "pinned-btn": ICONS.pin, "inbox-btn": ICONS.inbox, "help-btn": ICONS.help, "attach-btn": ICONS.attach,
     "emoji-btn": ICONS.smile, "settings-btn": ICONS.settings, "update-btn": ICONS.update,
     "add-text-channel": ICONS.plus, "add-voice-channel": ICONS.plus, "add-category-btn": ICONS.folderPlus,
     "add-server-btn": ICONS.plus, "mute-btn": ICONS.mic, "deafen-btn": ICONS.headphones,
-    "leave-voice-btn": ICONS.phoneOff, "camera-btn": ICONS.camera, "attachment-remove": ICONS.x, "search-close": ICONS.x, "reply-cancel": ICONS.x,
+    "leave-voice-btn": ICONS.phoneOff, "camera-btn": ICONS.camera, "attachment-remove": ICONS.x, "reply-cancel": ICONS.x,
     "fullscreen-btn": ICONS.maximize,
   };
   Object.entries(map).forEach(([id, svg]) => { const el = document.getElementById(id); if (el) el.innerHTML = svg; });
+  const searchIcon = document.querySelector(".header-search-icon");
+  if (searchIcon) searchIcon.innerHTML = ICONS.search;
   const invite = document.getElementById("invite-btn");
   if (invite) invite.innerHTML = ICONS.userPlus;
   const share = document.getElementById("share-btn");
-  if (share) share.innerHTML = `${ICONS.monitor}<span>Compartilhar tela</span>`;
+  if (share) share.innerHTML = ICONS.monitor;
 }
 applyStaticIcons();
 
@@ -808,18 +842,19 @@ function joinChannel(channel) {
   remoteVideoWrap.classList.add("hidden");
   activeSharerId = null;
   messageInput.placeholder = "Enviar mensagem...";
-  searchBar.classList.add("hidden");
+  searchInput.value = "";
   searchResultsEl.classList.add("hidden");
   renderChannelLists();
   socket.emit("join-channel", { channel, serverId: currentServerId });
 }
 
 // ---------- Busca ----------
-searchBtn.addEventListener("click", () => { searchBar.classList.toggle("hidden"); if (!searchBar.classList.contains("hidden")) searchInput.focus(); });
-searchClose.addEventListener("click", () => { searchBar.classList.add("hidden"); searchResultsEl.classList.add("hidden"); searchInput.value = ""; });
+searchInput.addEventListener("focus", () => { if (searchInput.value.trim() && currentChannel) socket.emit("search-messages", { channelId: currentChannel, query: searchInput.value }); });
+document.addEventListener("click", (e) => { if (!e.target.closest(".header-search") && !e.target.closest("#search-results")) searchResultsEl.classList.add("hidden"); });
 let searchDebounce = null;
 searchInput.addEventListener("input", () => {
   clearTimeout(searchDebounce);
+  if (!searchInput.value.trim()) { searchResultsEl.classList.add("hidden"); return; }
   searchDebounce = setTimeout(() => { if (currentChannel) socket.emit("search-messages", { channelId: currentChannel, query: searchInput.value }); }, 300);
 });
 
@@ -1097,8 +1132,6 @@ function renderMemberList(users) {
   renderGroup("Dono", owners);
   renderGroup("Moderadores", moderators);
   renderGroup("Membros", members);
-
-  onlineCount.textContent = lastMemberList.length;
 }
 
 // ---------- Mensagens diretas ----------
@@ -1123,7 +1156,7 @@ function openDm(withUsername) {
   messagesEl.innerHTML = "";
   screenBanner.classList.add("hidden");
   remoteVideoWrap.classList.add("hidden");
-  searchBar.classList.add("hidden");
+  searchInput.value = "";
   searchResultsEl.classList.add("hidden");
   messageInput.placeholder = `Mensagem para ${withUsername}...`;
   renderChannelLists();
@@ -1176,18 +1209,18 @@ async function startSharingScreen(sourceId) {
   try { localScreenStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: sourceId } } }); }
   catch (err) { alert("Não foi possível capturar a tela: " + err.message); return; }
   isSharing = true;
-  shareBtn.innerHTML = `${ICONS.monitor}<span>Parar compartilhamento</span>`;
+  shareBtn.innerHTML = ICONS.monitor;
   shareBtn.dataset.tooltip = "Parar de compartilhar a tela";
-  shareBtn.classList.add("active");
+  shareBtn.classList.add("active-toggle");
   localScreenStream.getVideoTracks()[0].onended = stopSharingScreen;
   socket.emit("screen-share-start");
 }
 function stopSharingScreen() {
   if (!isSharing) return;
   isSharing = false;
-  shareBtn.innerHTML = `${ICONS.monitor}<span>Compartilhar tela</span>`;
+  shareBtn.innerHTML = ICONS.monitor;
   shareBtn.dataset.tooltip = "Compartilhar sua tela";
-  shareBtn.classList.remove("active");
+  shareBtn.classList.remove("active-toggle");
   if (localScreenStream) { localScreenStream.getTracks().forEach((t) => t.stop()); localScreenStream = null; }
   screenPeerConnections.forEach((pc) => pc.close());
   screenPeerConnections.clear();

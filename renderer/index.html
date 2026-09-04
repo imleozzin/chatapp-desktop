@@ -80,6 +80,7 @@
           <div class="voice-bar-controls">
             <button id="mute-btn" class="voice-bar-btn" data-tooltip="Mutar microfone" data-tooltip-side="right"></button>
             <button id="camera-btn" class="voice-bar-btn" data-tooltip="Ativar câmera" data-tooltip-side="right"></button>
+            <button id="share-btn" class="voice-bar-btn" data-tooltip="Compartilhar sua tela" data-tooltip-side="right"></button>
             <button id="deafen-btn" class="voice-bar-btn" data-tooltip="Ensurdecer (mutar tudo)" data-tooltip-side="right"></button>
             <button id="leave-voice-btn" class="voice-bar-btn leave-btn" data-tooltip="Sair da chamada" data-tooltip-side="right"></button>
           </div>
@@ -101,16 +102,21 @@
       <header class="chat-header">
         <span id="current-channel-name">#geral</span>
         <div class="header-actions">
-          <button id="search-btn" class="icon-btn" data-tooltip="Buscar mensagens">🔍</button>
-          <button id="pinned-btn" class="icon-btn" data-tooltip="Mensagens fixadas">📌</button>
-          <button id="share-btn" class="share-btn" data-tooltip="Compartilhar sua tela">🖥️ Compartilhar tela</button>
+          <button id="pinned-btn" class="icon-btn" data-tooltip="Mensagens fixadas"></button>
+          <button id="inbox-btn" class="icon-btn" data-tooltip="Não lidas"></button>
+          <button id="help-btn" class="icon-btn" data-tooltip="Sobre o ChatApp"></button>
+          <div class="header-search">
+            <span class="header-search-icon"></span>
+            <input id="search-input" type="text" placeholder="Buscar" autocomplete="off" />
+          </div>
         </div>
       </header>
 
-      <div id="search-bar" class="search-bar hidden">
-        <input id="search-input" type="text" placeholder="Buscar nesse canal..." />
-        <button id="search-close" class="icon-btn" data-tooltip="Fechar busca">✕</button>
+      <div id="inbox-panel" class="inbox-panel hidden">
+        <div class="inbox-panel-title">Não lidas</div>
+        <div id="inbox-list" class="inbox-list"></div>
       </div>
+
       <div id="search-results" class="search-results hidden"></div>
 
       <div id="screen-share-banner" class="screen-share-banner hidden"></div>
@@ -151,7 +157,6 @@
     </main>
 
     <aside class="member-list">
-      <div class="member-list-header">Online — <span id="online-count">0</span></div>
       <ul id="member-items"></ul>
     </aside>
   </div>
@@ -252,6 +257,18 @@
       <div id="pinned-list" class="pinned-list"></div>
       <div class="modal-actions">
         <button id="pinned-close" class="primary-btn">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: sobre -->
+  <div id="about-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2>Sobre o ChatApp</h2>
+      <p class="subtitle" style="text-align:left;">Um chat com voz, vídeo e compartilhamento de tela, feito sob medida.</p>
+      <p class="subtitle" style="text-align:left; margin-top:8px;">Versão <span id="about-version">—</span></p>
+      <div class="modal-actions">
+        <button id="about-close" class="primary-btn">Fechar</button>
       </div>
     </div>
   </div>
