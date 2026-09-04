@@ -80,6 +80,7 @@ ipcMain.handle("get-screen-sources", async () => {
 });
 
 ipcMain.handle("get-config", () => readConfig());
+ipcMain.handle("get-app-version", () => app.getVersion());
 ipcMain.handle("set-config", (_e, partial) => {
   const config = { ...readConfig(), ...partial };
   writeConfig(config);

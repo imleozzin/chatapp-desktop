@@ -1,6 +1,6 @@
 {
   "name": "chatapp-desktop",
-  "version": "1.0.4",
+  "version": "1.0.7",
   "description": "App de chat + compartilhamento de tela (estilo Discord) para Windows",
   "main": "main.js",
   "dependencies": {
