@@ -7,6 +7,18 @@
 </head>
 <body>
 
+  <!-- Barra de título própria (substitui a barra padrão do Windows) -->
+  <div id="titlebar" class="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-title">ChatApp</span>
+    </div>
+    <div class="titlebar-controls">
+      <button id="win-minimize" class="titlebar-btn" data-tooltip="Minimizar"><svg viewBox="0 0 12 12" width="11" height="11"><rect x="1" y="5.5" width="10" height="1.2" fill="currentColor"/></svg></button>
+      <button id="win-maximize" class="titlebar-btn" data-tooltip="Maximizar"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.1"><rect x="1.5" y="1.5" width="9" height="9"/></svg></button>
+      <button id="win-close" class="titlebar-btn titlebar-close" data-tooltip="Fechar"><svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.2"><line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/></svg></button>
+    </div>
+  </div>
+
   <!-- Tela de login -->
   <div id="login-screen" class="login-screen">
     <div class="login-card">
