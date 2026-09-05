@@ -5,6 +5,8 @@
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
+const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 const { Server } = require("socket.io");
 const { createClient } = require("@supabase/supabase-js");
 
@@ -40,6 +42,7 @@ let categoriesByServer = {}; // serverId -> [categories]
 let emojisByServer = {}; // serverId -> [custom emojis]
 
 function dmKey(a, b) { return [a, b].sort().join("|"); }
+function friendKey(a, b) { return [a, b].sort(); }
 function genInviteCode() {
   return Math.random().toString(36).slice(2, 6) + "-" + Math.random().toString(36).slice(2, 6);
 }
@@ -101,6 +104,30 @@ async function ensureMembership(username, serverId, forceOwner) {
   return role;
 }
 
+async function getFriendsData(username) {
+  const { data } = await db.from("friendships").select("*").or(`user_a.eq.${username},user_b.eq.${username}`);
+  const rows = data || [];
+  const friends = [];
+  const incoming = [];
+  const outgoing = [];
+  for (const row of rows) {
+    const other = row.user_a === username ? row.user_b : row.user_a;
+    if (row.status === "accepted") friends.push(other);
+    else if (row.status === "pending") {
+      if (row.requested_by === username) outgoing.push(other);
+      else incoming.push(other);
+    }
+  }
+  return { friends, incoming, outgoing };
+}
+
+async function sendFriendsList(username) {
+  const socketId = usernameToSocket.get(username);
+  if (!socketId) return;
+  const data = await getFriendsData(username);
+  io.to(socketId).emit("friends-list", data);
+}
+
 async function getUserServers(username) {
   const { data } = await db
     .from("server_members").select("server_id, role, servers(id, name, invite_code, icon)")
@@ -137,22 +164,103 @@ function broadcastOnlineForDm() {
 
 io.on("connection", (socket) => {
   // ---------- Identificação inicial (uma vez por conexão) ----------
-  socket.on("hello", async ({ username, avatar }) => {
-    if (usernameToSocket.has(username) && usernameToSocket.get(username) !== socket.id) {
-      socket.emit("join-error", "Esse nome já está em uso. Escolha outro.");
-      return;
-    }
+  // ---------- Autenticação ----------
+  async function completeAuth(username, avatar) {
     usernameToSocket.set(username, socket.id);
     userStatus.set(username, "online");
-    await upsertUser(username, avatar);
-    await ensureMembership(username, DEFAULT_SERVER_ID, username.toLowerCase() === ADMIN_USERNAME);
-
     socket.data.username = username;
     socket.data.avatar = avatar || null;
+    await ensureMembership(username, DEFAULT_SERVER_ID, username.toLowerCase() === ADMIN_USERNAME);
+
+    const token = crypto.randomBytes(24).toString("hex");
+    await db.from("sessions").insert({ token, username });
+    socket.emit("auth-success", { username, avatar: avatar || null, token });
 
     const servers = await getUserServers(username);
     socket.emit("server-list", servers);
+    await sendFriendsList(username);
     broadcastOnlineForDm();
+  }
+
+  socket.on("register", async ({ username, password, avatar, email, birthDate }) => {
+    console.log(`[register] pedido recebido para username="${username}"`);
+    try {
+      username = (username || "").trim().slice(0, 24);
+      if (!username || !password || password.length < 4) {
+        console.log("[register] falhou: nome ou senha inválidos");
+        socket.emit("auth-error", "Preencha um nome e uma senha com pelo menos 4 caracteres.");
+        return;
+      }
+      if (!birthDate) {
+        console.log("[register] falhou: sem data de nascimento");
+        socket.emit("auth-error", "Preencha sua data de nascimento.");
+        return;
+      }
+      const age = Math.floor((Date.now() - new Date(birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+      if (age < 13) {
+        console.log("[register] falhou: idade insuficiente");
+        socket.emit("auth-error", "Você precisa ter pelo menos 13 anos para criar uma conta.");
+        return;
+      }
+      const { data: existing, error: selectError } = await db.from("users").select("*").eq("username", username).maybeSingle();
+      if (selectError) { console.log("[register] erro ao consultar usuário:", selectError.message); }
+      if (existing && existing.password_hash) {
+        console.log("[register] falhou: nome já em uso");
+        socket.emit("auth-error", "Esse nome de usuário já está em uso.");
+        return;
+      }
+      const password_hash = await bcrypt.hash(password, 10);
+      const userData = { password_hash, avatar: avatar || existing?.avatar || null, email: email || null, birth_date: birthDate };
+      if (existing) {
+        const { error } = await db.from("users").update(userData).eq("username", username);
+        if (error) console.log("[register] erro ao atualizar usuário:", error.message);
+      } else {
+        const { error } = await db.from("users").insert({ username, role: "member", ...userData });
+        if (error) console.log("[register] erro ao inserir usuário:", error.message);
+      }
+      console.log(`[register] sucesso para username="${username}", chamando completeAuth`);
+      await completeAuth(username, userData.avatar);
+      console.log(`[register] completeAuth terminou para username="${username}"`);
+    } catch (err) {
+      console.log("[register] ERRO INESPERADO:", err.message, err.stack);
+      socket.emit("auth-error", "Erro interno no servidor: " + err.message);
+    }
+  });
+
+  socket.on("login", async ({ username, password }) => {
+    username = (username || "").trim();
+    const { data: user } = await db.from("users").select("*").eq("username", username).maybeSingle();
+    if (!user || !user.password_hash) {
+      socket.emit("auth-error", "Usuário não encontrado.");
+      return;
+    }
+    const ok = await bcrypt.compare(password || "", user.password_hash);
+    if (!ok) {
+      socket.emit("auth-error", "Senha incorreta.");
+      return;
+    }
+    if (usernameToSocket.has(username) && usernameToSocket.get(username) !== socket.id) {
+      socket.emit("auth-error", "Essa conta já está conectada em outro lugar.");
+      return;
+    }
+    await completeAuth(username, user.avatar);
+  });
+
+  socket.on("login-with-token", async ({ token }) => {
+    if (!token) { socket.emit("auth-error", "Sessão expirada, faça login de novo."); return; }
+    const { data: session } = await db.from("sessions").select("*").eq("token", token).maybeSingle();
+    if (!session) { socket.emit("auth-error", "Sessão expirada, faça login de novo."); return; }
+    const { data: user } = await db.from("users").select("*").eq("username", session.username).maybeSingle();
+    if (!user) { socket.emit("auth-error", "Sessão expirada, faça login de novo."); return; }
+    if (usernameToSocket.has(user.username) && usernameToSocket.get(user.username) !== socket.id) {
+      socket.emit("auth-error", "Essa conta já está conectada em outro lugar.");
+      return;
+    }
+    await completeAuth(user.username, user.avatar);
+  });
+
+  socket.on("logout", async ({ token }) => {
+    if (token) await db.from("sessions").delete().eq("token", token);
   });
 
   socket.on("update-avatar", async (avatarDataUrl) => {
@@ -429,6 +537,51 @@ io.on("connection", (socket) => {
     if (role !== "owner") return;
     await db.from("channel_members").insert({ channel_id: channelId, username: targetUsername }).select();
     await pushChannelListToServer(serverId);
+  });
+
+  // ---------- Amigos (independente de servidor) ----------
+  socket.on("send-friend-request", async ({ toUsername }) => {
+    const username = socket.data.username;
+    if (!username || !toUsername || toUsername === username) return;
+    const [a, b] = friendKey(username, toUsername);
+    const { data: existing } = await db.from("friendships").select("*").eq("user_a", a).eq("user_b", b).maybeSingle();
+    if (existing) return;
+    await db.from("friendships").insert({ user_a: a, user_b: b, status: "pending", requested_by: username });
+    await sendFriendsList(username);
+    await sendFriendsList(toUsername);
+  });
+
+  socket.on("respond-friend-request", async ({ fromUsername, accept }) => {
+    const username = socket.data.username;
+    if (!username) return;
+    const [a, b] = friendKey(username, fromUsername);
+    if (accept) await db.from("friendships").update({ status: "accepted" }).eq("user_a", a).eq("user_b", b);
+    else await db.from("friendships").delete().eq("user_a", a).eq("user_b", b);
+    await sendFriendsList(username);
+    await sendFriendsList(fromUsername);
+  });
+
+  socket.on("remove-friend", async ({ friendUsername }) => {
+    const username = socket.data.username;
+    if (!username) return;
+    const [a, b] = friendKey(username, friendUsername);
+    await db.from("friendships").delete().eq("user_a", a).eq("user_b", b);
+    await sendFriendsList(username);
+    await sendFriendsList(friendUsername);
+  });
+
+  socket.on("get-friends", async () => {
+    const username = socket.data.username;
+    if (username) await sendFriendsList(username);
+  });
+
+  // ---------- Sair do servidor ----------
+  socket.on("leave-server", async ({ serverId }) => {
+    const username = socket.data.username;
+    if (!username || serverId === DEFAULT_SERVER_ID) return; // não deixa sair do servidor padrão
+    await db.from("server_members").delete().eq("server_id", serverId).eq("username", username);
+    const servers = await getUserServers(username);
+    socket.emit("server-list", servers);
   });
 
   // ---------- Mensagens diretas (DM) — sempre globais, fora dos servidores ----------
