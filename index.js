@@ -163,6 +163,10 @@ function broadcastOnlineForDm() {
 }
 
 io.on("connection", (socket) => {
+  console.log(`[connection] NOVA CONEXÃO recebida! socket.id=${socket.id}, de: ${socket.handshake.address}`);
+  socket.onAny((eventName, ...args) => {
+    console.log(`[onAny] evento recebido: "${eventName}"`);
+  });
   // ---------- Identificação inicial (uma vez por conexão) ----------
   // ---------- Autenticação ----------
   async function completeAuth(username, avatar) {
