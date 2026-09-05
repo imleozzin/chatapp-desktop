@@ -89,6 +89,7 @@
             <span class="server-chevron"></span>
           </button>
           <div id="server-dropdown" class="server-dropdown hidden">
+            <button id="menu-my-server-profile" class="server-dropdown-item"><span></span>Meu apelido/foto neste servidor</button>
             <button id="menu-invite" class="server-dropdown-item"><span></span>Convidar para o servidor</button>
             <button id="menu-create-channel" class="server-dropdown-item"><span></span>Criar canal</button>
             <button id="menu-create-category" class="server-dropdown-item"><span></span>Criar categoria</button>
@@ -413,6 +414,26 @@
         <p id="join-server-error" class="login-error"></p>
       </div>
 
+    </div>
+  </div>
+
+  <!-- Modal: apelido e foto neste servidor (diferente do perfil global da conta) -->
+  <div id="server-profile-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2>Seu perfil neste servidor</h2>
+      <p class="subtitle" style="text-align:left;">Apelido e foto só aparecem pra quem está neste servidor — seu perfil global continua o mesmo em todo o resto do QG.</p>
+      <div class="login-avatar-picker">
+        <div id="server-profile-avatar-preview" class="login-avatar-preview">?</div>
+        <input id="server-profile-avatar-input" type="file" accept="image/*" class="hidden" />
+        <button id="server-profile-avatar-btn" type="button" class="ghost-btn">Trocar foto aqui</button>
+        <button id="server-profile-avatar-reset" type="button" class="ghost-btn">Usar foto global</button>
+      </div>
+      <label class="field-label">Apelido neste servidor</label>
+      <input id="server-profile-nickname-input" type="text" class="modal-input" maxlength="32" placeholder="Deixe em branco para usar seu nome de usuário" />
+      <div class="modal-actions">
+        <button id="server-profile-cancel" class="ghost-btn">Cancelar</button>
+        <button id="server-profile-save" class="primary-btn">Salvar</button>
+      </div>
     </div>
   </div>
 

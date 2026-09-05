@@ -914,7 +914,7 @@ function applyStaticIcons() {
   if (friendsBtn) friendsBtn.innerHTML = ICONS.friends;
   const chevrons = document.querySelectorAll(".server-chevron");
   chevrons.forEach((c) => (c.innerHTML = ICONS.chevron));
-  const menuIcons = { "menu-invite": ICONS.mail, "menu-create-channel": ICONS.channelPlus, "menu-create-category": ICONS.folderPlus, "menu-change-icon": ICONS.image, "menu-leave-server": ICONS.logout };
+  const menuIcons = { "menu-my-server-profile": ICONS.pencil, "menu-invite": ICONS.mail, "menu-create-channel": ICONS.channelPlus, "menu-create-category": ICONS.folderPlus, "menu-change-icon": ICONS.image, "menu-leave-server": ICONS.logout };
   Object.entries(menuIcons).forEach(([id, svg]) => { const el = document.querySelector(`#${id} span`); if (el) el.innerHTML = svg; });
   document.querySelectorAll(".friends-home-icon").forEach((el) => { el.innerHTML = ICONS.friends; });
 }
@@ -1178,6 +1178,56 @@ serverNameBtn.addEventListener("click", (e) => {
 });
 document.addEventListener("click", (e) => { if (!e.target.closest(".channel-list-header")) serverDropdown.classList.add("hidden"); });
 
+// ---------- Apelido e foto por servidor (diferente do perfil global) ----------
+const serverProfileOverlay = document.getElementById("server-profile-overlay");
+const serverProfileAvatarPreview = document.getElementById("server-profile-avatar-preview");
+const serverProfileAvatarBtn = document.getElementById("server-profile-avatar-btn");
+const serverProfileAvatarInput = document.getElementById("server-profile-avatar-input");
+const serverProfileAvatarReset = document.getElementById("server-profile-avatar-reset");
+const serverProfileNicknameInput = document.getElementById("server-profile-nickname-input");
+const serverProfileCancel = document.getElementById("server-profile-cancel");
+const serverProfileSave = document.getElementById("server-profile-save");
+let serverProfileAvatarChanged = false;
+let serverProfileAvatarValue = null;
+
+function renderServerProfileAvatarPreview() {
+  const avatar = serverProfileAvatarChanged ? serverProfileAvatarValue : (lastMemberList.find((m) => m.username === username)?.avatar || myAvatar);
+  serverProfileAvatarPreview.innerHTML = avatar ? `<img src="${avatar}" />` : escapeHtml(username[0]?.toUpperCase() || "?");
+}
+
+document.getElementById("menu-my-server-profile").addEventListener("click", () => {
+  serverDropdown.classList.add("hidden");
+  const me = lastMemberList.find((m) => m.username === username);
+  serverProfileNicknameInput.value = (me && me.nickname) || "";
+  serverProfileAvatarChanged = false;
+  serverProfileAvatarValue = null;
+  renderServerProfileAvatarPreview();
+  serverProfileOverlay.classList.remove("hidden");
+});
+serverProfileCancel.addEventListener("click", () => serverProfileOverlay.classList.add("hidden"));
+serverProfileAvatarBtn.addEventListener("click", () => serverProfileAvatarInput.click());
+serverProfileAvatarInput.addEventListener("change", async () => {
+  const file = serverProfileAvatarInput.files[0];
+  if (!file) return;
+  serverProfileAvatarValue = await readAndResizeImage(file);
+  serverProfileAvatarChanged = true;
+  renderServerProfileAvatarPreview();
+});
+serverProfileAvatarReset.addEventListener("click", () => {
+  serverProfileAvatarChanged = true;
+  serverProfileAvatarValue = null;
+  renderServerProfileAvatarPreview();
+});
+serverProfileSave.addEventListener("click", () => {
+  socket.emit("update-server-profile", {
+    serverId: currentServerId,
+    nickname: serverProfileNicknameInput.value.trim(),
+    avatarChanged: serverProfileAvatarChanged,
+    avatar: serverProfileAvatarValue,
+  });
+  serverProfileOverlay.classList.add("hidden");
+});
+
 document.getElementById("menu-invite").addEventListener("click", () => {
   const srv = myServers.find((s) => s.id === currentServerId);
   if (!srv || !srv.inviteCode) return;
@@ -1259,7 +1309,7 @@ function renderServerMembersSettings(members) {
   serverMembersSettingsList.innerHTML = members.map((m) => `
     <div class="friend-row" data-username="${escapeHtml(m.username)}">
       ${avatarHtml(m.username, m.avatar, 32)}
-      <span class="friend-name">${escapeHtml(m.username)} <small style="color:var(--text-muted)">${m.role === "owner" ? "Dono" : m.role === "moderator" ? "Moderador" : "Membro"}</small></span>
+      <span class="friend-name">${escapeHtml(m.nickname || m.username)}${m.nickname ? ` <small style="color:var(--text-muted)">(@${escapeHtml(m.username)})</small>` : ""} <small style="color:var(--text-muted)">${m.role === "owner" ? "Dono" : m.role === "moderator" ? "Moderador" : "Membro"}</small></span>
       ${m.role !== "owner" ? `<button class="ghost-btn settings-kick-btn">Remover</button><button class="ghost-btn danger settings-ban-btn">Banir</button>` : ""}
     </div>`).join("");
   serverMembersSettingsList.querySelectorAll(".settings-kick-btn").forEach((btn) => {
@@ -1515,8 +1565,15 @@ function linkEmbedHtml(embed) {
     </a>`;
 }
 
+function resolveDisplay(rawUsername, rawAvatar, isDm) {
+  if (isDm) return { name: rawUsername, avatar: rawAvatar };
+  const member = lastMemberList.find((m) => m.username === rawUsername);
+  return { name: (member && member.nickname) || rawUsername, avatar: (member && member.avatar) || rawAvatar };
+}
+
 function messageRowHtml(msg, isDm, grouped) {
   const author = isDm ? msg.from : msg.username;
+  const { name: displayName, avatar: displayAvatar } = resolveDisplay(author, msg.avatar, isDm);
   const isMine = author === username;
   const canModerate = !isDm && (myRole === "owner" || myRole === "moderator");
   let attachmentHtml = "";
@@ -1541,11 +1598,11 @@ function messageRowHtml(msg, isDm, grouped) {
 
   const gutterHtml = grouped
     ? `<div class="msg-gutter"><span class="msg-hover-time">${time}</span></div>`
-    : `<div class="msg-gutter">${avatarHtml(author, msg.avatar, 40)}</div>`;
+    : `<div class="msg-gutter">${avatarHtml(author, displayAvatar, 40)}</div>`;
 
   const headerHtml = grouped ? "" : `
       <div class="msg-meta">
-        <span class="msg-author" style="color:${color}">${escapeHtml(author)}</span>
+        <span class="msg-author" style="color:${color}">${escapeHtml(displayName)}</span>
         <span class="msg-time">${time}</span>
         ${editedTag}${pinnedTag}
       </div>`;
@@ -1738,7 +1795,7 @@ function renderMemberList(users) {
       if (dimmed) li.className = "member-offline";
       const roleBadge = myRole === "owner" && u.username !== username
         ? `<button class="role-toggle-btn" data-tooltip="Tornar moderador ou membro">${ICONS.shield}</button>` : "";
-      li.innerHTML = `${avatarWithStatusHtml(u.username, u.avatar, 26, u.status)}<span class="member-name">${escapeHtml(u.username)}</span>${roleBadge}`;
+      li.innerHTML = `${avatarWithStatusHtml(u.username, u.avatar, 26, u.status)}<span class="member-name">${escapeHtml(u.nickname || u.username)}</span>${roleBadge}`;
       li.querySelector(".member-name").addEventListener("click", () => openUserProfile(u.username));
       const roleBtn = li.querySelector(".role-toggle-btn");
       if (roleBtn) roleBtn.addEventListener("click", (e) => {
