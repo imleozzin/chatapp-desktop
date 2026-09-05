@@ -88,9 +88,21 @@ const voiceAudioEls = new Map();
 // ---------- Elementos ----------
 const loginScreen = document.getElementById("login-screen");
 const appEl = document.getElementById("app");
-const usernameInput = document.getElementById("username-input");
-const joinBtn = document.getElementById("join-btn");
+const loginView = document.getElementById("login-view");
+const registerView = document.getElementById("register-view");
+const showRegisterLink = document.getElementById("show-register-link");
+const showLoginLink = document.getElementById("show-login-link");
+
+const loginUsernameInput = document.getElementById("login-username-input");
+const loginPasswordInput = document.getElementById("login-password-input");
+const loginSubmitBtn = document.getElementById("login-submit-btn");
 const loginError = document.getElementById("login-error");
+
+const registerUsernameInput = document.getElementById("register-username-input");
+const registerPasswordInput = document.getElementById("register-password-input");
+const registerSubmitBtn = document.getElementById("register-submit-btn");
+const registerError = document.getElementById("register-error");
+
 const loginAvatarBtn = document.getElementById("login-avatar-btn");
 const loginAvatarInput = document.getElementById("login-avatar-input");
 const loginAvatarPreview = document.getElementById("login-avatar-preview");
@@ -429,19 +441,16 @@ profileCardSettings.addEventListener("click", () => { profileCard.classList.add(
 profileCardLogout.addEventListener("click", () => settingsLogout.click());
 
 // ---------- Início: tenta login salvo ----------
-(async function initAuth() {
+// ---------- Início: conecta e tenta sessão salva ----------
+let pendingSessionToken = null;
+(async function init() {
   const config = await window.electronAPI.getConfig();
   notificationsEnabled = config.notificationsEnabled !== false;
-  if (config.username) {
-    username = config.username;
-    myAvatar = config.avatarDataUrl || null;
-    usernameInput.value = username;
-    if (myAvatar) loginAvatarPreview.innerHTML = `<img src="${myAvatar}" />`;
-    connectToServer();
-  }
+  pendingSessionToken = config.sessionToken || null;
+  connectSocket(config.serverUrl);
 })();
 
-// ---------- Login ----------
+// ---------- Login / Registro ----------
 loginAvatarBtn.addEventListener("click", () => loginAvatarInput.click());
 loginAvatarInput.addEventListener("change", async () => {
   const file = loginAvatarInput.files[0];
@@ -450,34 +459,76 @@ loginAvatarInput.addEventListener("change", async () => {
   loginAvatarPreview.innerHTML = `<img src="${myAvatar}" />`;
 });
 
-joinBtn.addEventListener("click", connectToServer);
-usernameInput.addEventListener("keydown", (e) => e.key === "Enter" && connectToServer());
+showRegisterLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  loginView.classList.add("hidden");
+  registerView.classList.remove("hidden");
+  loginError.textContent = "";
+});
+showLoginLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  registerView.classList.add("hidden");
+  loginView.classList.remove("hidden");
+  registerError.textContent = "";
+});
 
-async function connectToServer() {
-  const name = usernameInput.value.trim();
-  if (!name) { loginError.textContent = "Digite um nome."; return; }
-  loginError.textContent = "Conectando...";
-  username = name;
+function doLogin() {
+  const uname = loginUsernameInput.value.trim();
+  const pass = loginPasswordInput.value;
+  loginError.textContent = "";
+  if (!uname || !pass) { loginError.textContent = "Preencha usuário e senha."; return; }
+  socket.emit("login", { username: uname, password: pass });
+}
+loginSubmitBtn.addEventListener("click", doLogin);
+loginPasswordInput.addEventListener("keydown", (e) => e.key === "Enter" && doLogin());
 
-  const config = await window.electronAPI.getConfig();
-  socket = io(config.serverUrl, { reconnectionAttempts: 5, timeout: 8000 });
+function doRegister() {
+  const uname = registerUsernameInput.value.trim();
+  const pass = registerPasswordInput.value;
+  registerError.textContent = "";
+  if (!uname || !pass) { registerError.textContent = "Preencha usuário e senha."; return; }
+  if (pass.length < 4) { registerError.textContent = "A senha precisa ter pelo menos 4 caracteres."; return; }
+  socket.emit("register", { username: uname, password: pass, avatar: myAvatar });
+}
+registerSubmitBtn.addEventListener("click", doRegister);
+registerPasswordInput.addEventListener("keydown", (e) => e.key === "Enter" && doRegister());
+
+function connectSocket(serverUrl) {
+  socket = io(serverUrl, { reconnectionAttempts: 5, timeout: 8000 });
 
   socket.on("connect", () => {
+    if (pendingSessionToken) {
+      socket.emit("login-with-token", { token: pendingSessionToken });
+    }
+  });
+
+  socket.on("connect_error", () => {
+    loginError.textContent = "Não foi possível conectar ao servidor.";
+    registerError.textContent = "Não foi possível conectar ao servidor.";
+  });
+
+  socket.on("auth-success", ({ username: uname, avatar, token }) => {
+    username = uname;
+    myAvatar = avatar || null;
     loginScreen.classList.add("hidden");
     appEl.classList.remove("hidden");
     myUsernameEl.textContent = username;
     renderMyAvatar();
     updateMyStatusDot();
-    socket.emit("hello", { username, avatar: myAvatar });
-    window.electronAPI.setConfig({ username, avatarDataUrl: myAvatar || "" });
+    window.electronAPI.setConfig({ sessionToken: token, avatarDataUrl: myAvatar || "" });
   });
 
-  socket.on("connect_error", () => { loginError.textContent = "Não foi possível conectar ao servidor."; });
-  socket.on("join-error", (msg) => {
-    loginError.textContent = msg;
-    loginScreen.classList.remove("hidden");
-    appEl.classList.add("hidden");
-    window.electronAPI.setConfig({ username: "" });
+  socket.on("auth-error", (msg) => {
+    if (pendingSessionToken) {
+      // login automático falhou — limpa e mostra a tela de login normal
+      pendingSessionToken = null;
+      window.electronAPI.setConfig({ sessionToken: "" });
+      loginScreen.classList.remove("hidden");
+      appEl.classList.add("hidden");
+      return;
+    }
+    if (!registerView.classList.contains("hidden")) registerError.textContent = msg;
+    else loginError.textContent = msg;
   });
 
   socket.on("server-list", (servers) => {
@@ -779,7 +830,9 @@ settingsSave.addEventListener("click", async () => {
   window.location.reload();
 });
 settingsLogout.addEventListener("click", async () => {
-  await window.electronAPI.setConfig({ username: "", avatarDataUrl: "" });
+  const config = await window.electronAPI.getConfig();
+  if (socket && config.sessionToken) socket.emit("logout", { token: config.sessionToken });
+  await window.electronAPI.setConfig({ sessionToken: "", avatarDataUrl: "" });
   window.location.reload();
 });
 
@@ -814,7 +867,7 @@ function selectServer(serverId) {
   channels = [];
   categories = [];
   const srv = myServers.find((s) => s.id === serverId);
-  currentServerNameEl.textContent = srv ? srv.name : "ChatApp";
+  currentServerNameEl.textContent = srv ? srv.name : "QG";
   messagesEl.innerHTML = "";
   renderServerIcons();
   socket.emit("select-server", { serverId });
@@ -1331,10 +1384,23 @@ async function openSourcePicker() {
   const sources = await window.electronAPI.getScreenSources();
   const overlay = document.createElement("div");
   overlay.className = "picker-overlay";
-  overlay.innerHTML = `<div class="picker-modal"><h2>Escolha o que compartilhar</h2><div class="picker-grid">${sources.map((s) => `<div class="picker-item" data-id="${s.id}"><img src="${s.thumbnail}" /><span>${escapeHtml(s.name)}</span></div>`).join("")}</div></div>`;
+  overlay.innerHTML = `
+    <div class="picker-modal share-picker-modal">
+      <div class="share-picker-header">
+        <h2>Escolha o que compartilhar</h2>
+        <button class="icon-btn share-picker-close">${ICONS.x}</button>
+      </div>
+      <div class="picker-grid share-picker-grid">
+        ${sources.map((s) => `
+          <div class="picker-item share-picker-item" data-id="${s.id}">
+            <div class="share-picker-thumb"><img src="${s.thumbnail}" /></div>
+            <span class="share-picker-name">${escapeHtml(s.name)}</span>
+          </div>`).join("")}
+      </div>
+    </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener("click", async (e) => {
-    if (e.target === overlay) { overlay.remove(); return; }
+    if (e.target === overlay || e.target.closest(".share-picker-close")) { overlay.remove(); return; }
     const item = e.target.closest(".picker-item");
     if (!item) return;
     overlay.remove();
@@ -1350,6 +1416,13 @@ async function startSharingScreen(sourceId) {
   shareBtn.classList.add("active-toggle");
   localScreenStream.getVideoTracks()[0].onended = stopSharingScreen;
   socket.emit("screen-share-start");
+
+  // Prévia: você também vê sua própria tela sendo compartilhada
+  remoteVideo.srcObject = localScreenStream;
+  remoteVideo.muted = true;
+  remoteVideoWrap.classList.remove("hidden");
+  screenBanner.textContent = "Você está compartilhando sua tela";
+  screenBanner.classList.remove("hidden");
 }
 function stopSharingScreen() {
   if (!isSharing) return;
@@ -1361,6 +1434,10 @@ function stopSharingScreen() {
   screenPeerConnections.forEach((pc) => pc.close());
   screenPeerConnections.clear();
   socket.emit("screen-share-stop");
+  remoteVideo.srcObject = null;
+  remoteVideo.muted = false;
+  remoteVideoWrap.classList.add("hidden");
+  screenBanner.classList.add("hidden");
 }
 function startWatchingScreen(sharerId) { socket.emit("request-screen-offer", { sharerId }); }
 

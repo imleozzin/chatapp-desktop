@@ -659,3 +659,63 @@ body { display: flex; flex-direction: column; }
 .friend-row:hover { background: var(--bg-sidebar-hover); }
 .friend-name { flex: 1; font-size: 14.5px; color: var(--text); }
 .friend-msg-btn { font-size: 12px; padding: 5px 10px; }
+
+/* ---------- Modal de escolher tela pra compartilhar ---------- */
+.share-picker-modal { width: 640px; max-height: 80vh; background: #1a1b1e; }
+.share-picker-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.share-picker-header h2 { margin: 0; }
+.share-picker-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.share-picker-item {
+  background: #232428; border: 2px solid transparent; border-radius: 10px;
+  padding: 10px; cursor: pointer; transition: border-color 0.15s ease, transform 0.1s ease;
+}
+.share-picker-item:hover { border-color: var(--accent); transform: translateY(-2px); }
+.share-picker-thumb {
+  background: #000; border-radius: 6px; overflow: hidden; aspect-ratio: 16/10;
+  display: flex; align-items: center; justify-content: center;
+}
+.share-picker-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.share-picker-name {
+  display: block; margin-top: 8px; font-size: 13px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---------- Tela de login/registro redesenhada ---------- */
+.login-screen {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 20% 20%, #2a2360 0%, #14101f 55%, #0d0a17 100%);
+}
+.login-bg { position: absolute; inset: 0; overflow: hidden; z-index: 0; }
+.login-orb {
+  position: absolute; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.35), rgba(139,110,242,0.15) 60%, transparent 75%);
+  filter: blur(1px);
+  animation: orb-float 12s ease-in-out infinite;
+}
+.login-orb-1 { width: 260px; height: 260px; top: 12%; left: 8%; animation-delay: 0s; }
+.login-orb-2 { width: 160px; height: 160px; bottom: 14%; left: 20%; animation-delay: 2.5s; background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.3), rgba(240,168,64,0.15) 60%, transparent 75%); }
+.login-orb-3 { width: 340px; height: 340px; bottom: -8%; right: -6%; animation-delay: 5s; }
+@keyframes orb-float {
+  0%, 100% { transform: translateY(0) translateX(0); }
+  50% { transform: translateY(-22px) translateX(14px); }
+}
+
+.login-card {
+  position: relative; z-index: 1;
+  width: 400px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.55);
+}
+.login-brand { display: flex; justify-content: center; margin-bottom: 18px; }
+.login-brand span {
+  width: 56px; height: 56px; border-radius: 18px;
+  background: linear-gradient(135deg, #7882f5, #4c3cc8);
+  color: #fff; font-weight: 800; font-size: 20px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 20px rgba(88,101,242,0.4);
+}
+.auth-view h1 { text-align: center; margin: 0 0 6px; font-size: 22px; }
+.auth-view .subtitle { margin-bottom: 20px; }
+.auth-switch { text-align: center; font-size: 13px; color: var(--text-muted); margin-top: 14px; }
+.auth-switch a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.auth-switch a:hover { text-decoration: underline; }

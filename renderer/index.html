@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
-<title>ChatApp</title>
+<title>QG</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -10,7 +10,7 @@
   <!-- Barra de título própria (substitui a barra padrão do Windows) -->
   <div id="titlebar" class="titlebar">
     <div class="titlebar-drag">
-      <span class="titlebar-title">ChatApp</span>
+      <span class="titlebar-title">QG</span>
     </div>
     <div class="titlebar-controls">
       <button id="win-minimize" class="titlebar-btn" data-tooltip="Minimizar"><svg viewBox="0 0 12 12" width="11" height="11"><rect x="1" y="5.5" width="10" height="1.2" fill="currentColor"/></svg></button>
@@ -21,19 +21,46 @@
 
   <!-- Tela de login -->
   <div id="login-screen" class="login-screen">
-    <div class="login-card">
-      <h1>ChatApp</h1>
-      <p class="subtitle">Escolha um nome e uma foto para entrar</p>
+    <div class="login-bg">
+      <div class="login-orb login-orb-1"></div>
+      <div class="login-orb login-orb-2"></div>
+      <div class="login-orb login-orb-3"></div>
+    </div>
 
-      <div class="login-avatar-picker">
-        <div id="login-avatar-preview" class="login-avatar-preview">?</div>
-        <input id="login-avatar-input" type="file" accept="image/*" class="hidden" />
-        <button id="login-avatar-btn" type="button" class="ghost-btn">Escolher foto</button>
+    <div class="login-card">
+      <div class="login-brand"><span>QG</span></div>
+
+      <div id="login-view" class="auth-view">
+        <h1>Boas-vindas de volta!</h1>
+        <p class="subtitle">Estamos muito animados em te ver de novo!</p>
+
+        <label class="field-label">Nome de usuário</label>
+        <input id="login-username-input" type="text" class="modal-input" maxlength="24" autofocus />
+        <label class="field-label">Senha</label>
+        <input id="login-password-input" type="password" class="modal-input" />
+        <button id="login-submit-btn" class="primary-btn full-width">Entrar</button>
+        <p id="login-error" class="login-error"></p>
+        <p class="auth-switch">Precisando de uma conta? <a href="#" id="show-register-link">Crie uma</a></p>
       </div>
 
-      <input id="username-input" type="text" placeholder="Seu nome" maxlength="24" autofocus />
-      <button id="join-btn">Entrar</button>
-      <p id="login-error" class="login-error"></p>
+      <div id="register-view" class="auth-view hidden">
+        <h1>Criar sua conta</h1>
+        <p class="subtitle">Escolha um nome, uma senha e uma foto (opcional)</p>
+
+        <div class="login-avatar-picker">
+          <div id="login-avatar-preview" class="login-avatar-preview">?</div>
+          <input id="login-avatar-input" type="file" accept="image/*" class="hidden" />
+          <button id="login-avatar-btn" type="button" class="ghost-btn">Escolher foto</button>
+        </div>
+
+        <label class="field-label">Nome de usuário</label>
+        <input id="register-username-input" type="text" class="modal-input" maxlength="24" />
+        <label class="field-label">Senha</label>
+        <input id="register-password-input" type="password" class="modal-input" />
+        <button id="register-submit-btn" class="primary-btn full-width">Criar conta</button>
+        <p id="register-error" class="login-error"></p>
+        <p class="auth-switch">Já tem uma conta? <a href="#" id="show-login-link">Entrar</a></p>
+      </div>
     </div>
   </div>
 
@@ -49,7 +76,7 @@
     <aside class="channel-list">
       <div class="channel-list-header">
         <button id="server-name-btn" class="server-name-btn">
-          <span id="current-server-name">ChatApp</span>
+          <span id="current-server-name">QG</span>
           <span class="server-chevron"></span>
         </button>
         <div id="server-dropdown" class="server-dropdown hidden">
@@ -138,7 +165,7 @@
         <div class="header-actions">
           <button id="pinned-btn" class="icon-btn" data-tooltip="Mensagens fixadas"></button>
           <button id="inbox-btn" class="icon-btn" data-tooltip="Não lidas"></button>
-          <button id="help-btn" class="icon-btn" data-tooltip="Sobre o ChatApp"></button>
+          <button id="help-btn" class="icon-btn" data-tooltip="Sobre o QG"></button>
           <div class="header-search">
             <span class="header-search-icon"></span>
             <input id="search-input" type="text" placeholder="Buscar" autocomplete="off" />
@@ -327,7 +354,7 @@
   <!-- Modal: sobre -->
   <div id="about-overlay" class="picker-overlay hidden">
     <div class="picker-modal">
-      <h2>Sobre o ChatApp</h2>
+      <h2>Sobre o QG</h2>
       <p class="subtitle" style="text-align:left;">Um chat com voz, vídeo e compartilhamento de tela, feito sob medida.</p>
       <p class="subtitle" style="text-align:left; margin-top:8px;">Versão <span id="about-version">—</span></p>
       <div class="modal-actions">
