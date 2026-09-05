@@ -1738,7 +1738,7 @@ emojiBtn.addEventListener("click", (e) => {
   const rect = emojiBtn.getBoundingClientRect();
   let html = EMOJI_SET.map((em) => `<span class="emoji-option" data-emoji="${em}">${em}</span>`).join("");
   if (customEmojis.length) {
-    html += customEmojis.map((em) => `<span class="emoji-option custom-emoji-option" data-name="${em.name}"><img class="custom-emoji" src="${em.image}" /></span>`).join("");
+    html += customEmojis.map((em) => `<span class="emoji-option custom-emoji-option" data-name="${em.name}"><img class="custom-emoji" src="${em.image}" />${em.animated ? '<span class="emoji-gif-badge">GIF</span>' : ""}</span>`).join("");
   }
   if (myRole === "owner") html += `<span class="emoji-option add-custom-emoji-btn" data-tooltip="Adicionar emoji personalizado">➕</span>`;
   emojiPicker.innerHTML = html;
@@ -1756,8 +1756,15 @@ function openCreateEmojiFlow() {
   input.onchange = async () => {
     const file = input.files[0];
     if (!file) return;
-    const image = await readAndResizeImage(file, 48);
-    socket.emit("create-emoji", { name: name.trim(), image, serverId: currentServerId });
+    if (file.type === "image/gif") {
+      if (file.size > 2 * 1024 * 1024) { alert("Esse GIF é grande demais para um emoji (máximo 2MB)."); return; }
+      const reader = new FileReader();
+      reader.onload = () => socket.emit("create-emoji", { name: name.trim(), image: reader.result, serverId: currentServerId, animated: true });
+      reader.readAsDataURL(file);
+    } else {
+      const image = await readAndResizeImage(file, 48);
+      socket.emit("create-emoji", { name: name.trim(), image, serverId: currentServerId, animated: false });
+    }
   };
   input.click();
 }

@@ -342,9 +342,10 @@ input, button, select { font-family: var(--font); }
 
 /* ---------- Emoji picker ---------- */
 .emoji-picker { position: fixed; z-index: 60; background: var(--bg-sidebar); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; box-shadow: 0 12px 30px rgba(0,0,0,0.5); width: 220px; }
-.emoji-option { font-size: 18px; text-align: center; padding: 4px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.emoji-option { position: relative; font-size: 18px; text-align: center; padding: 4px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .emoji-option:hover { background: var(--bg-sidebar-hover); }
 .emoji-option .custom-emoji { width: 20px; height: 20px; vertical-align: 0; }
+.emoji-gif-badge { position: absolute; bottom: -2px; right: -2px; background: var(--accent); color: #fff; font-size: 7px; font-weight: 700; line-height: 1; padding: 1.5px 2.5px; border-radius: 3px; pointer-events: none; }
 
 /* ---------- Tooltips (legendas ao passar o mouse) ---------- */
 [data-tooltip] { position: relative; }
