@@ -92,6 +92,7 @@
           <button id="menu-create-channel" class="server-dropdown-item"><span></span>Criar canal</button>
           <button id="menu-create-category" class="server-dropdown-item"><span></span>Criar categoria</button>
           <button id="menu-change-icon" class="server-dropdown-item"><span></span>Trocar ícone do servidor</button>
+          <button id="menu-server-settings" class="server-dropdown-item"><span></span>Configurações do servidor</button>
           <div class="server-dropdown-divider"></div>
           <button id="menu-leave-server" class="server-dropdown-item danger"><span></span>Sair do servidor</button>
         </div>
@@ -146,29 +147,68 @@
       </div>
 
       <div id="profile-card" class="profile-card hidden">
-        <div class="profile-card-header">
+        <div class="profile-card-banner"></div>
+        <div class="profile-card-body">
           <div id="profile-card-avatar" class="avatar profile-card-avatar">?</div>
-          <div>
-            <div id="profile-card-name" class="profile-card-name"></div>
-            <button id="profile-card-avatar-edit" class="ghost-btn" style="margin-top:6px;">Trocar foto</button>
+          <div id="profile-card-name" class="profile-card-name"></div>
+          <div id="profile-card-username" class="profile-card-username"></div>
+
+          <button id="profile-card-avatar-edit" class="ghost-btn full-width" style="margin-top:12px;">Editar perfil</button>
+
+          <div class="profile-card-status-row" id="profile-card-status-row">
+            <span class="status-dot status-online" id="profile-card-status-dot"></span>
+            <span id="profile-card-status-label">Online</span>
+            <span class="profile-card-status-chevron"></span>
           </div>
-        </div>
-        <label class="field-label" style="margin-top:14px;">Status</label>
-        <select id="profile-card-status" class="modal-input">
-          <option value="online">🟢 Online</option>
-          <option value="away">🌙 Ausente</option>
-          <option value="busy">⛔ Ocupado</option>
-          <option value="offline">⚫ Aparecer offline</option>
-        </select>
-        <div class="modal-actions">
-          <button id="profile-card-settings" class="ghost-btn">Configurações</button>
-          <button id="profile-card-logout" class="danger-btn">Sair da conta</button>
+          <div id="profile-card-status-menu" class="profile-card-status-menu hidden">
+            <button class="profile-card-status-option" data-status="online"><span class="status-dot status-online"></span>Online</button>
+            <button class="profile-card-status-option" data-status="away"><span class="status-dot status-away"></span>Ausente</button>
+            <button class="profile-card-status-option" data-status="busy"><span class="status-dot status-busy"></span>Ocupado</button>
+            <button class="profile-card-status-option" data-status="offline"><span class="status-dot status-offline"></span>Aparecer offline</button>
+          </div>
+
+          <div class="modal-divider" style="margin:14px 0;"></div>
+          <div class="modal-actions">
+            <button id="profile-card-settings" class="ghost-btn">Configurações</button>
+            <button id="profile-card-logout" class="danger-btn">Sair da conta</button>
+          </div>
         </div>
       </div>
     </aside>
 
     <main class="chat-area">
-      <header class="chat-header">
+      <div id="friends-home" class="friends-home hidden">
+        <header class="chat-header friends-home-header">
+          <span class="friends-home-title"><span class="friends-home-icon"></span> Amigos</span>
+          <div class="friends-tabs">
+            <button class="friends-tab active" data-tab="all">Todos</button>
+            <button class="friends-tab" data-tab="pending">Pendentes <span id="pending-count" class="friends-tab-count hidden">0</span></button>
+            <button class="friends-tab friends-tab-add" data-tab="add">Adicionar amigo</button>
+          </div>
+        </header>
+
+        <div class="friends-home-body">
+          <div id="friends-tab-all" class="friends-tab-content">
+            <div id="friends-list" class="friends-list"></div>
+          </div>
+
+          <div id="friends-tab-pending" class="friends-tab-content hidden">
+            <div id="friends-pending-list" class="friends-list"></div>
+          </div>
+
+          <div id="friends-tab-add" class="friends-tab-content hidden">
+            <h2>Adicionar amigo</h2>
+            <p class="subtitle" style="text-align:left;">Você pode adicionar amigos com o nome de usuário deles.</p>
+            <div class="add-friend-row">
+              <input id="add-friend-input" type="text" class="modal-input" placeholder="Insira um nome de usuário" style="margin-bottom:0;" />
+              <button id="add-friend-confirm" class="primary-btn">Enviar pedido de amizade</button>
+            </div>
+            <p id="add-friend-error" class="login-error"></p>
+          </div>
+        </div>
+      </div>
+
+      <header class="chat-header" id="channel-header">
         <span id="current-channel-name">#geral</span>
         <div class="header-actions">
           <button id="pinned-btn" class="icon-btn" data-tooltip="Mensagens fixadas"></button>
@@ -232,28 +272,62 @@
 
   <!-- Modal: configurações -->
   <div id="settings-overlay" class="picker-overlay hidden">
-    <div class="picker-modal">
-      <h2>Configurações</h2>
+    <div class="picker-modal server-settings-modal">
+      <div class="server-settings-nav">
+        <div class="server-settings-nav-title">Configurações</div>
+        <button class="server-settings-nav-item account-nav-tab active" data-tab="account">Minha conta</button>
+        <button class="server-settings-nav-item account-nav-tab" data-tab="notifications">Notificações</button>
+        <button class="server-settings-nav-item account-nav-tab" data-tab="advanced">Avançado</button>
+        <div class="server-settings-nav-divider"></div>
+        <button id="settings-logout" class="server-settings-nav-item danger">Sair da conta</button>
+      </div>
+      <div class="server-settings-content">
+        <button id="settings-close" class="modal-close-x"></button>
 
-      <label class="field-label">Status</label>
-      <select id="settings-status-select" class="modal-input">
-        <option value="online">🟢 Online</option>
-        <option value="away">🌙 Ausente</option>
-        <option value="busy">⛔ Ocupado</option>
-        <option value="offline">⚫ Aparecer offline</option>
-      </select>
+        <div id="account-tab-account" class="server-settings-tab">
+          <h2>Minha conta</h2>
+          <label class="field-label">Nome de usuário</label>
+          <input type="text" class="modal-input" id="settings-username-display" disabled />
 
-      <label class="checkbox-label">
-        <input id="settings-notifications-checkbox" type="checkbox" />
-        Mostrar notificações de novas mensagens
-      </label>
+          <label class="field-label">Status</label>
+          <select id="settings-status-select" class="modal-input">
+            <option value="online">🟢 Online</option>
+            <option value="away">🌙 Ausente</option>
+            <option value="busy">⛔ Ocupado</option>
+            <option value="offline">⚫ Aparecer offline</option>
+          </select>
 
-      <label class="field-label">Endereço do servidor</label>
-      <input id="settings-server-input" type="text" class="modal-input" />
-      <div class="modal-actions space-between">
-        <button id="settings-logout" class="danger-btn">Sair da conta</button>
-        <div style="display:flex; gap:8px;">
-          <button id="settings-cancel" class="ghost-btn">Cancelar</button>
+          <div class="modal-divider" style="margin:18px 0;">E-mail</div>
+          <label class="field-label">E-mail atual</label>
+          <input type="text" class="modal-input" id="settings-email-display" disabled />
+          <label class="field-label">Novo e-mail</label>
+          <input type="email" class="modal-input" id="settings-new-email-input" placeholder="novo@email.com" />
+          <label class="field-label">Confirme sua senha atual</label>
+          <input type="password" class="modal-input" id="settings-email-password-input" />
+          <button id="settings-email-save" class="primary-btn">Salvar e-mail</button>
+          <p id="settings-email-msg" class="login-error"></p>
+
+          <div class="modal-divider" style="margin:18px 0;">Senha</div>
+          <label class="field-label">Senha atual</label>
+          <input type="password" class="modal-input" id="settings-current-password-input" />
+          <label class="field-label">Nova senha</label>
+          <input type="password" class="modal-input" id="settings-new-password-input" />
+          <button id="settings-password-save" class="primary-btn">Alterar senha</button>
+          <p id="settings-password-msg" class="login-error"></p>
+        </div>
+
+        <div id="account-tab-notifications" class="server-settings-tab hidden">
+          <h2>Notificações</h2>
+          <label class="checkbox-label">
+            <input id="settings-notifications-checkbox" type="checkbox" />
+            Mostrar notificações de novas mensagens
+          </label>
+        </div>
+
+        <div id="account-tab-advanced" class="server-settings-tab hidden">
+          <h2>Avançado</h2>
+          <label class="field-label">Endereço do servidor</label>
+          <input id="settings-server-input" type="text" class="modal-input" />
           <button id="settings-save" class="primary-btn">Salvar e reconectar</button>
         </div>
       </div>
@@ -287,23 +361,46 @@
 
   <!-- Modal: adicionar servidor (criar ou entrar com código) -->
   <div id="add-server-overlay" class="picker-overlay hidden">
-    <div class="picker-modal">
-      <h2>Adicionar servidor</h2>
+    <div class="picker-modal add-server-modal">
 
-      <label class="field-label">Criar um servidor novo</label>
-      <input id="new-server-name-input" type="text" class="modal-input" placeholder="Nome do servidor" maxlength="40" />
-      <button id="create-server-confirm" class="primary-btn full-width">Criar servidor</button>
+      <!-- Etapa 1: escolher criar ou entrar -->
+      <div id="add-server-step-main" class="add-server-step">
+        <button id="add-server-close-x" class="modal-close-x"></button>
+        <h2 class="add-server-title">Criar seu servidor</h2>
+        <p class="subtitle" style="text-align:center;">Seu servidor é onde você e seus amigos se reúnem. Crie o seu e comece a interagir.</p>
 
-      <div class="modal-divider">ou</div>
+        <button id="show-create-server-form" class="add-server-option">
+          <span class="add-server-option-icon">＋</span>
+          <span>Criar o meu</span>
+          <span class="add-server-option-arrow">›</span>
+        </button>
 
-      <label class="field-label">Entrar com um código de convite</label>
-      <input id="join-server-code-input" type="text" class="modal-input" placeholder="Ex: ab12-cd34" />
-      <button id="join-server-confirm" class="primary-btn full-width">Entrar</button>
-      <p id="join-server-error" class="login-error"></p>
+        <div class="modal-divider">Já tem um convite?</div>
 
-      <div class="modal-actions">
-        <button id="add-server-cancel" class="ghost-btn">Fechar</button>
+        <button id="show-join-server-form" class="ghost-btn full-width">Entrar em um servidor</button>
       </div>
+
+      <!-- Etapa 2a: criar servidor -->
+      <div id="add-server-step-create" class="add-server-step hidden">
+        <button id="create-server-back" class="modal-back">‹ Voltar</button>
+        <h2 class="add-server-title">Dê um nome ao seu servidor</h2>
+        <p class="subtitle" style="text-align:center;">Dá pra mudar isso a qualquer momento.</p>
+        <label class="field-label">Nome do servidor</label>
+        <input id="new-server-name-input" type="text" class="modal-input" placeholder="Servidor da galera" maxlength="40" />
+        <button id="create-server-confirm" class="primary-btn full-width">Criar servidor</button>
+      </div>
+
+      <!-- Etapa 2b: entrar com convite -->
+      <div id="add-server-step-join" class="add-server-step hidden">
+        <button id="join-server-back" class="modal-back">‹ Voltar</button>
+        <h2 class="add-server-title">Entrar em um servidor</h2>
+        <p class="subtitle" style="text-align:center;">Insira um código de convite abaixo para entrar em um servidor existente</p>
+        <label class="field-label">Código de convite</label>
+        <input id="join-server-code-input" type="text" class="modal-input" placeholder="Ex: ab12-cd34" />
+        <button id="join-server-confirm" class="primary-btn full-width">Entrar no servidor</button>
+        <p id="join-server-error" class="login-error"></p>
+      </div>
+
     </div>
   </div>
 
@@ -330,31 +427,78 @@
     </div>
   </div>
 
-  <!-- Modal: amigos -->
-  <div id="friends-overlay" class="picker-overlay hidden">
-    <div class="picker-modal friends-modal">
-      <div class="friends-tabs">
-        <button class="friends-tab active" data-tab="all">Todos</button>
-        <button class="friends-tab" data-tab="pending">Pendentes <span id="pending-count" class="friends-tab-count hidden">0</span></button>
-        <button class="friends-tab" data-tab="add">Adicionar amigo</button>
-        <button id="friends-close" class="icon-btn" style="margin-left:auto;"></button>
+  <!-- Modal: configurações do servidor -->
+  <div id="server-settings-overlay" class="picker-overlay hidden">
+    <div class="picker-modal server-settings-modal">
+      <div class="server-settings-nav">
+        <div class="server-settings-nav-title" id="server-settings-title">Servidor</div>
+        <button class="server-settings-nav-item active" data-tab="overview">Visão geral</button>
+        <button class="server-settings-nav-item" data-tab="members">Membros</button>
+        <button class="server-settings-nav-item" data-tab="invites">Convites</button>
+        <div class="server-settings-nav-divider"></div>
+        <button class="server-settings-nav-item danger" data-tab="delete">Excluir servidor</button>
       </div>
+      <div class="server-settings-content">
+        <button id="server-settings-close" class="modal-close-x"></button>
 
-      <div id="friends-tab-all" class="friends-tab-content">
-        <div id="friends-list" class="friends-list"></div>
-      </div>
-
-      <div id="friends-tab-pending" class="friends-tab-content hidden">
-        <div id="friends-pending-list" class="friends-list"></div>
-      </div>
-
-      <div id="friends-tab-add" class="friends-tab-content hidden">
-        <label class="field-label">Nome de usuário</label>
-        <div style="display:flex; gap:8px;">
-          <input id="add-friend-input" type="text" class="modal-input" placeholder="Digite o nome exato" style="margin-bottom:0;" />
-          <button id="add-friend-confirm" class="primary-btn">Enviar</button>
+        <div id="settings-tab-overview" class="server-settings-tab">
+          <h2>Visão geral</h2>
+          <label class="field-label">Nome do servidor</label>
+          <input id="server-rename-input" type="text" class="modal-input" maxlength="40" />
+          <button id="server-rename-save" class="primary-btn">Salvar nome</button>
         </div>
-        <p id="add-friend-error" class="login-error"></p>
+
+        <div id="settings-tab-members" class="server-settings-tab hidden">
+          <h2>Membros</h2>
+          <div id="server-members-settings-list" class="friends-list"></div>
+        </div>
+
+        <div id="settings-tab-invites" class="server-settings-tab hidden">
+          <h2>Convites</h2>
+          <p class="subtitle" style="text-align:left;">Compartilhe esse código para convidar pessoas.</p>
+          <input id="server-invite-code-display" type="text" class="modal-input" readonly />
+          <button id="server-invite-regenerate" class="ghost-btn">Gerar novo código</button>
+        </div>
+
+        <div id="settings-tab-delete" class="server-settings-tab hidden">
+          <h2>Excluir servidor</h2>
+          <p class="subtitle" style="text-align:left;">Essa ação não pode ser desfeita. Todos os canais, mensagens e membros desse servidor serão apagados.</p>
+          <button id="server-delete-confirm" class="danger-btn">Excluir permanentemente</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: editar perfil -->
+  <div id="edit-profile-overlay" class="picker-overlay hidden">
+    <div class="picker-modal profile-edit-modal">
+      <button id="edit-profile-close" class="modal-close-x"></button>
+      <div class="profile-edit-banner" id="edit-profile-banner-preview">
+        <button id="edit-profile-banner-btn" class="profile-edit-banner-btn">Trocar banner (foto ou GIF)</button>
+      </div>
+      <div class="profile-edit-body">
+        <div id="edit-profile-avatar-preview" class="avatar profile-card-avatar">?</div>
+        <button id="edit-profile-avatar-btn" class="ghost-btn">Trocar foto de perfil</button>
+        <div id="edit-profile-name" class="profile-card-name" style="margin-top:10px;"></div>
+        <label class="field-label" style="margin-top:14px;">Sobre mim</label>
+        <textarea id="edit-profile-bio-input" class="modal-input profile-bio-textarea" maxlength="190" placeholder="Descreva-se..."></textarea>
+        <button id="edit-profile-save" class="primary-btn full-width">Salvar</button>
+      </div>
+    </div>
+    <input id="edit-profile-banner-input" type="file" accept="image/*" class="hidden" />
+  </div>
+
+  <!-- Modal: ver perfil de outra pessoa -->
+  <div id="view-profile-overlay" class="picker-overlay hidden">
+    <div class="picker-modal profile-edit-modal">
+      <button id="view-profile-close" class="modal-close-x"></button>
+      <div id="view-profile-banner" class="profile-edit-banner"></div>
+      <div class="profile-edit-body">
+        <div id="view-profile-avatar" class="avatar profile-card-avatar">?</div>
+        <div id="view-profile-name" class="profile-card-name" style="margin-top:10px;"></div>
+        <div id="view-profile-member-since" class="profile-card-username"></div>
+        <p id="view-profile-bio" class="subtitle" style="text-align:left; margin-top:10px;"></p>
+        <button id="view-profile-message-btn" class="primary-btn full-width">Mensagem</button>
       </div>
     </div>
   </div>

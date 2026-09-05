@@ -44,6 +44,8 @@ const ICONS = {
 let socket = null;
 let username = "";
 let myAvatar = null;
+let myBanner = null;
+let myBio = "";
 let myStatus = "online";
 let notificationsEnabled = true;
 let myServers = [];
@@ -164,7 +166,6 @@ const settingsServerInput = document.getElementById("settings-server-input");
 const settingsStatusSelect = document.getElementById("settings-status-select");
 const settingsNotificationsCheckbox = document.getElementById("settings-notifications-checkbox");
 const settingsSave = document.getElementById("settings-save");
-const settingsCancel = document.getElementById("settings-cancel");
 const settingsLogout = document.getElementById("settings-logout");
 
 const createChannelOverlay = document.getElementById("create-channel-overlay");
@@ -188,7 +189,6 @@ const createServerConfirm = document.getElementById("create-server-confirm");
 const joinServerCodeInput = document.getElementById("join-server-code-input");
 const joinServerConfirm = document.getElementById("join-server-confirm");
 const joinServerError = document.getElementById("join-server-error");
-const addServerCancel = document.getElementById("add-server-cancel");
 
 const inviteOverlay = document.getElementById("invite-overlay");
 const inviteCodeDisplay = document.getElementById("invite-code-display");
@@ -332,8 +332,7 @@ aboutClose.addEventListener("click", () => aboutOverlay.classList.add("hidden"))
 // ---------- Amigos ----------
 let friendsData = { friends: [], incoming: [], outgoing: [] };
 const friendsRailBtn = document.getElementById("friends-rail-btn");
-const friendsOverlay = document.getElementById("friends-overlay");
-const friendsCloseBtn = document.getElementById("friends-close");
+const friendsHomeEl = document.getElementById("friends-home");
 const pendingCountEl = document.getElementById("pending-count");
 const friendsListEl = document.getElementById("friends-list");
 const friendsPendingListEl = document.getElementById("friends-pending-list");
@@ -341,8 +340,25 @@ const addFriendInput = document.getElementById("add-friend-input");
 const addFriendConfirm = document.getElementById("add-friend-confirm");
 const addFriendError = document.getElementById("add-friend-error");
 
-friendsRailBtn.addEventListener("click", () => { friendsOverlay.classList.remove("hidden"); socket.emit("get-friends"); });
-friendsCloseBtn.addEventListener("click", () => friendsOverlay.classList.add("hidden"));
+function showFriendsHome() {
+  currentServerId = null;
+  currentChannel = null;
+  currentDmUser = null;
+  renderServerIcons();
+  friendsHomeEl.classList.remove("hidden");
+  document.getElementById("channel-header").classList.add("hidden");
+  messagesEl.classList.add("hidden");
+  document.getElementById("message-form").classList.add("hidden");
+  socket.emit("get-friends");
+}
+function hideFriendsHome() {
+  friendsHomeEl.classList.add("hidden");
+  document.getElementById("channel-header").classList.remove("hidden");
+  messagesEl.classList.remove("hidden");
+  document.getElementById("message-form").classList.remove("hidden");
+}
+
+friendsRailBtn.addEventListener("click", showFriendsHome);
 
 document.querySelectorAll(".friends-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
@@ -388,7 +404,7 @@ friendsListEl.addEventListener("click", (e) => {
   const row = e.target.closest(".friend-row");
   if (!row) return;
   const uname = row.dataset.username;
-  if (e.target.closest(".friend-msg-btn")) { openDm(uname); friendsOverlay.classList.add("hidden"); }
+  if (e.target.closest(".friend-msg-btn")) { openDm(uname); }
   else if (e.target.closest(".friend-remove-btn")) { if (confirm(`Remover ${uname} dos seus amigos?`)) socket.emit("remove-friend", { friendUsername: uname }); }
 });
 friendsPendingListEl.addEventListener("click", (e) => {
@@ -413,22 +429,85 @@ const myProfileBtn = document.getElementById("my-profile-btn");
 const profileCard = document.getElementById("profile-card");
 const profileCardAvatar = document.getElementById("profile-card-avatar");
 const profileCardName = document.getElementById("profile-card-name");
-const profileCardStatus = document.getElementById("profile-card-status");
+const profileCardUsername = document.getElementById("profile-card-username");
+const profileCardStatusRow = document.getElementById("profile-card-status-row");
+const profileCardStatusDot = document.getElementById("profile-card-status-dot");
+const profileCardStatusLabel = document.getElementById("profile-card-status-label");
+const profileCardStatusMenu = document.getElementById("profile-card-status-menu");
 const profileCardAvatarEdit = document.getElementById("profile-card-avatar-edit");
 const profileCardSettings = document.getElementById("profile-card-settings");
 const profileCardLogout = document.getElementById("profile-card-logout");
+const STATUS_LABELS_PT = { online: "Online", away: "Ausente", busy: "Ocupado", offline: "Aparecer offline" };
+
+function refreshProfileCardStatus() {
+  profileCardStatusDot.className = "status-dot status-" + myStatus;
+  profileCardStatusLabel.textContent = STATUS_LABELS_PT[myStatus] || "Online";
+}
 
 myProfileBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   profileCardName.textContent = username;
+  profileCardUsername.textContent = "";
   profileCardAvatar.innerHTML = myAvatar ? `<img class="avatar-img" style="width:100%;height:100%" src="${myAvatar}" />` : escapeHtml(username[0]?.toUpperCase() || "?");
   profileCardAvatar.style.background = myAvatar ? "transparent" : colorForUsername(username);
-  profileCardStatus.value = myStatus;
+  refreshProfileCardStatus();
+  profileCardStatusMenu.classList.add("hidden");
   profileCard.classList.toggle("hidden");
 });
 document.addEventListener("click", (e) => { if (!e.target.closest("#profile-card") && !e.target.closest("#my-profile-btn")) profileCard.classList.add("hidden"); });
 
-profileCardAvatarEdit.addEventListener("click", async () => {
+profileCardAvatarEdit.addEventListener("click", () => { profileCard.classList.add("hidden"); openEditProfile(); });
+profileCardStatusRow.addEventListener("click", (e) => { e.stopPropagation(); profileCardStatusMenu.classList.toggle("hidden"); });
+profileCardStatusMenu.querySelectorAll(".profile-card-status-option").forEach((opt) => {
+  opt.addEventListener("click", () => {
+    myStatus = opt.dataset.status;
+    socket.emit("set-status", { status: myStatus });
+    updateMyStatusDot();
+    refreshProfileCardStatus();
+    profileCardStatusMenu.classList.add("hidden");
+  });
+});
+profileCardSettings.addEventListener("click", () => { profileCard.classList.add("hidden"); settingsBtn.click(); });
+profileCardLogout.addEventListener("click", () => settingsLogout.click());
+
+// ---------- Editar perfil (banner, foto, bio) ----------
+const editProfileOverlay = document.getElementById("edit-profile-overlay");
+const editProfileClose = document.getElementById("edit-profile-close");
+const editProfileBannerPreview = document.getElementById("edit-profile-banner-preview");
+const editProfileBannerBtn = document.getElementById("edit-profile-banner-btn");
+const editProfileBannerInput = document.getElementById("edit-profile-banner-input");
+const editProfileAvatarPreview = document.getElementById("edit-profile-avatar-preview");
+const editProfileAvatarBtn = document.getElementById("edit-profile-avatar-btn");
+const editProfileName = document.getElementById("edit-profile-name");
+const editProfileBioInput = document.getElementById("edit-profile-bio-input");
+const editProfileSave = document.getElementById("edit-profile-save");
+
+function renderEditProfilePreview() {
+  editProfileBannerPreview.style.background = myBanner ? `url(${myBanner}) center/cover` : "linear-gradient(135deg, var(--accent), #a98bff)";
+  editProfileAvatarPreview.innerHTML = myAvatar ? `<img class="avatar-img" style="width:100%;height:100%" src="${myAvatar}" />` : escapeHtml(username[0]?.toUpperCase() || "?");
+  editProfileAvatarPreview.style.background = myAvatar ? "transparent" : colorForUsername(username);
+}
+function openEditProfile() {
+  editProfileName.textContent = username;
+  editProfileBioInput.value = myBio || "";
+  renderEditProfilePreview();
+  editProfileOverlay.classList.remove("hidden");
+}
+editProfileClose.addEventListener("click", () => editProfileOverlay.classList.add("hidden"));
+editProfileBannerBtn.addEventListener("click", () => editProfileBannerInput.click());
+editProfileBannerInput.addEventListener("change", async () => {
+  const file = editProfileBannerInput.files[0];
+  if (!file) return;
+  if (file.type === "image/gif") {
+    const reader = new FileReader();
+    reader.onload = () => { myBanner = reader.result; renderEditProfilePreview(); };
+    reader.readAsDataURL(file);
+  } else {
+    myBanner = await readAndResizeImage(file, 600);
+    renderEditProfilePreview();
+  }
+});
+editProfileAvatarBtn.addEventListener("click", () => {
   const input = document.createElement("input");
   input.type = "file"; input.accept = "image/*";
   input.onchange = async () => {
@@ -436,20 +515,36 @@ profileCardAvatarEdit.addEventListener("click", async () => {
     if (!file) return;
     myAvatar = await readAndResizeImage(file);
     renderMyAvatar();
+    renderEditProfilePreview();
     socket.emit("update-avatar", myAvatar);
     window.electronAPI.setConfig({ avatarDataUrl: myAvatar });
-    profileCardAvatar.innerHTML = `<img class="avatar-img" style="width:100%;height:100%" src="${myAvatar}" />`;
-    profileCardAvatar.style.background = "transparent";
   };
   input.click();
 });
-profileCardStatus.addEventListener("change", () => {
-  myStatus = profileCardStatus.value;
-  socket.emit("set-status", { status: myStatus });
-  updateMyStatusDot();
+editProfileSave.addEventListener("click", () => {
+  myBio = editProfileBioInput.value.trim();
+  socket.emit("update-profile", { bio: myBio, banner: myBanner });
+  editProfileOverlay.classList.add("hidden");
 });
-profileCardSettings.addEventListener("click", () => { profileCard.classList.add("hidden"); settingsBtn.click(); });
-profileCardLogout.addEventListener("click", () => settingsLogout.click());
+
+// ---------- Ver perfil de outra pessoa ----------
+const viewProfileOverlay = document.getElementById("view-profile-overlay");
+const viewProfileClose = document.getElementById("view-profile-close");
+const viewProfileBanner = document.getElementById("view-profile-banner");
+const viewProfileAvatar = document.getElementById("view-profile-avatar");
+const viewProfileName = document.getElementById("view-profile-name");
+const viewProfileMemberSince = document.getElementById("view-profile-member-since");
+const viewProfileBio = document.getElementById("view-profile-bio");
+const viewProfileMessageBtn = document.getElementById("view-profile-message-btn");
+let viewingProfileUsername = null;
+
+function openUserProfile(targetUsername) {
+  if (targetUsername === username) { openEditProfile(); return; }
+  viewingProfileUsername = targetUsername;
+  socket.emit("get-user-profile", { username: targetUsername });
+}
+viewProfileClose.addEventListener("click", () => viewProfileOverlay.classList.add("hidden"));
+viewProfileMessageBtn.addEventListener("click", () => { viewProfileOverlay.classList.add("hidden"); openDm(viewingProfileUsername); });
 
 // ---------- Início: tenta login salvo ----------
 // ---------- Início: conecta e tenta sessão salva ----------
@@ -458,6 +553,8 @@ let pendingSessionToken = null;
   const config = await window.electronAPI.getConfig();
   notificationsEnabled = config.notificationsEnabled !== false;
   pendingSessionToken = config.sessionToken || null;
+  loginError.textContent = "Conectando ao servidor... (pode demorar até 1 minuto se ele estiver \"dormindo\")";
+  registerError.textContent = loginError.textContent;
   connectSocket(config.serverUrl);
 })();
 
@@ -512,10 +609,12 @@ registerPasswordInput.addEventListener("keydown", (e) => e.key === "Enter" && do
 
 function connectSocket(serverUrl) {
   console.log("[cliente] tentando conectar em:", JSON.stringify(serverUrl));
-  socket = io(serverUrl, { reconnectionAttempts: 5, timeout: 8000 });
+  socket = io(serverUrl, { reconnectionAttempts: 10, reconnectionDelay: 3000, timeout: 60000 });
 
   socket.on("connect", () => {
-    console.log("[cliente] CONECTADO! socket.id =", socket.id, "transporte:", socket.io.engine.transport.name);
+    console.log("[cliente] CONECTADO! socket.id =", socket.id);
+    loginError.textContent = "";
+    registerError.textContent = "";
     if (pendingSessionToken) {
       socket.emit("login-with-token", { token: pendingSessionToken });
     }
@@ -527,6 +626,10 @@ function connectSocket(serverUrl) {
     registerError.textContent = "Não foi possível conectar ao servidor.";
   });
 
+  socket.on("disconnect", (reason) => {
+    console.log("[cliente] DESCONECTADO. motivo:", reason);
+  });
+
   socket.on("auth-success", ({ username: uname, avatar, token }) => {
     username = uname;
     myAvatar = avatar || null;
@@ -536,6 +639,7 @@ function connectSocket(serverUrl) {
     renderMyAvatar();
     updateMyStatusDot();
     window.electronAPI.setConfig({ sessionToken: token, avatarDataUrl: myAvatar || "" });
+    socket.emit("get-user-profile", { username });
   });
 
   socket.on("auth-error", (msg) => {
@@ -555,10 +659,49 @@ function connectSocket(serverUrl) {
     myServers = servers;
     renderServerIcons();
     if (!currentServerId && servers.length) selectServer(servers[0].id);
+    else if (!currentServerId && !servers.length && !currentDmUser) showFriendsHome();
+    if (!serverSettingsOverlay.classList.contains("hidden")) {
+      const srv = myServers.find((s) => s.id === currentServerId);
+      if (srv) { serverSettingsTitle.textContent = srv.name; serverInviteCodeDisplay.value = srv.inviteCode || ""; }
+      const nameField = document.activeElement !== serverRenameInput;
+      if (srv && nameField) serverRenameInput.value = srv.name;
+    }
   });
   socket.on("server-created", ({ serverId }) => selectServer(serverId));
   socket.on("join-server-error", (msg) => { joinServerError.textContent = msg; });
   socket.on("friends-list", (data) => { friendsData = data; renderFriends(); });
+  socket.on("account-info", (info) => { settingsEmailDisplay.value = info.email || "Nenhum e-mail cadastrado"; });
+  socket.on("account-success", (msg) => { settingsEmailMsg.textContent = ""; settingsPasswordMsg.textContent = ""; alert(msg); });
+  socket.on("account-error", (msg) => {
+    if (!document.getElementById("account-tab-account").classList.contains("hidden")) {
+      if (settingsCurrentPasswordInput.value || settingsNewPasswordInput.value) settingsPasswordMsg.textContent = msg;
+      else settingsEmailMsg.textContent = msg;
+    }
+  });
+  socket.on("account-email-updated", ({ email }) => { settingsEmailDisplay.value = email || "Nenhum e-mail cadastrado"; settingsNewEmailInput.value = ""; settingsEmailPasswordInput.value = ""; });
+  socket.on("user-profile", (profile) => {
+    if (profile.username === username) {
+      myBio = profile.bio || "";
+      myBanner = profile.banner || null;
+      return;
+    }
+    viewProfileName.textContent = profile.username;
+    viewProfileBanner.style.background = profile.banner ? `url(${profile.banner}) center/cover` : "linear-gradient(135deg, var(--accent), #a98bff)";
+    viewProfileAvatar.innerHTML = profile.avatar ? `<img class="avatar-img" style="width:100%;height:100%" src="${profile.avatar}" />` : escapeHtml(profile.username[0]?.toUpperCase() || "?");
+    viewProfileAvatar.style.background = profile.avatar ? "transparent" : colorForUsername(profile.username);
+    viewProfileBio.textContent = profile.bio || "";
+    const since = profile.created_at ? new Date(profile.created_at).toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" }) : "";
+    viewProfileMemberSince.textContent = since ? `Membro desde ${since}` : "";
+    viewProfileOverlay.classList.remove("hidden");
+  });
+  socket.on("server-members-list", ({ serverId, members }) => { if (serverId === currentServerId) renderServerMembersSettings(members); });
+  socket.on("kicked-from-server", ({ serverId }) => {
+    if (serverId === currentServerId) {
+      currentServerId = null;
+      const next = myServers.find((s) => s.id !== serverId);
+      if (next) selectServer(next.id); else showFriendsHome();
+    }
+  });
   socket.on("server-icon-updated", ({ serverId, icon }) => {
     const srv = myServers.find((s) => s.id === serverId);
     if (srv) srv.icon = icon;
@@ -716,7 +859,8 @@ function applyStaticIcons() {
     "add-text-channel": ICONS.plus, "add-voice-channel": ICONS.plus,
     "add-server-btn": ICONS.plus, "mute-btn": ICONS.mic, "deafen-btn": ICONS.headphones,
     "leave-voice-btn": ICONS.phoneOff, "camera-btn": ICONS.camera, "attachment-remove": ICONS.x, "reply-cancel": ICONS.x,
-    "fullscreen-btn": ICONS.maximize,
+    "fullscreen-btn": ICONS.maximize, "add-server-close-x": ICONS.x, "server-settings-close": ICONS.x, "settings-close": ICONS.x,
+    "edit-profile-close": ICONS.x, "view-profile-close": ICONS.x,
   };
   Object.entries(map).forEach(([id, svg]) => { const el = document.getElementById(id); if (el) el.innerHTML = svg; });
   const searchIcon = document.querySelector(".header-search-icon");
@@ -729,8 +873,8 @@ function applyStaticIcons() {
   chevrons.forEach((c) => (c.innerHTML = ICONS.chevron));
   const menuIcons = { "menu-invite": ICONS.mail, "menu-create-channel": ICONS.channelPlus, "menu-create-category": ICONS.folderPlus, "menu-change-icon": ICONS.image, "menu-leave-server": ICONS.logout };
   Object.entries(menuIcons).forEach(([id, svg]) => { const el = document.querySelector(`#${id} span`); if (el) el.innerHTML = svg; });
-  const friendsClose = document.getElementById("friends-close");
-  if (friendsClose) friendsClose.innerHTML = ICONS.x;
+  const friendsHomeIcon = document.querySelector(".friends-home-icon");
+  if (friendsHomeIcon) friendsHomeIcon.innerHTML = ICONS.friends;
 }
 applyStaticIcons();
 
@@ -831,21 +975,73 @@ function renderTypingLine() {
 }
 
 // ---------- Configurações ----------
+const settingsUsernameDisplay = document.getElementById("settings-username-display");
+const settingsEmailDisplay = document.getElementById("settings-email-display");
+const settingsNewEmailInput = document.getElementById("settings-new-email-input");
+const settingsEmailPasswordInput = document.getElementById("settings-email-password-input");
+const settingsEmailSave = document.getElementById("settings-email-save");
+const settingsEmailMsg = document.getElementById("settings-email-msg");
+const settingsCurrentPasswordInput = document.getElementById("settings-current-password-input");
+const settingsNewPasswordInput = document.getElementById("settings-new-password-input");
+const settingsPasswordSave = document.getElementById("settings-password-save");
+const settingsPasswordMsg = document.getElementById("settings-password-msg");
+const settingsClose = document.getElementById("settings-close");
+
 settingsBtn.addEventListener("click", async () => {
   const config = await window.electronAPI.getConfig();
   settingsServerInput.value = config.serverUrl;
   settingsStatusSelect.value = myStatus;
   settingsNotificationsCheckbox.checked = notificationsEnabled;
+  settingsUsernameDisplay.value = username;
+  settingsEmailDisplay.value = "Carregando...";
+  settingsNewEmailInput.value = "";
+  settingsEmailPasswordInput.value = "";
+  settingsCurrentPasswordInput.value = "";
+  settingsNewPasswordInput.value = "";
+  settingsEmailMsg.textContent = "";
+  settingsPasswordMsg.textContent = "";
+  document.querySelectorAll(".account-nav-tab").forEach((t) => t.classList.remove("active"));
+  document.querySelector('.account-nav-tab[data-tab="account"]').classList.add("active");
+  document.querySelectorAll("#account-tab-account, #account-tab-notifications, #account-tab-advanced").forEach((t) => t.classList.add("hidden"));
+  document.getElementById("account-tab-account").classList.remove("hidden");
+  socket.emit("get-account-info");
   settingsOverlay.classList.remove("hidden");
 });
-settingsCancel.addEventListener("click", () => settingsOverlay.classList.add("hidden"));
+settingsClose.addEventListener("click", () => settingsOverlay.classList.add("hidden"));
+document.querySelectorAll(".account-nav-tab[data-tab]").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".account-nav-tab").forEach((t) => t.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelectorAll("#account-tab-account, #account-tab-notifications, #account-tab-advanced").forEach((t) => t.classList.add("hidden"));
+    document.getElementById(`account-tab-${tab.dataset.tab}`).classList.remove("hidden");
+  });
+});
+
+settingsStatusSelect.addEventListener("change", () => {
+  myStatus = settingsStatusSelect.value;
+  socket.emit("set-status", { status: myStatus });
+  updateMyStatusDot();
+});
+settingsNotificationsCheckbox.addEventListener("change", async () => {
+  notificationsEnabled = settingsNotificationsCheckbox.checked;
+  await window.electronAPI.setConfig({ notificationsEnabled });
+});
+
+settingsEmailSave.addEventListener("click", () => {
+  settingsEmailMsg.textContent = "";
+  socket.emit("change-email", { password: settingsEmailPasswordInput.value, newEmail: settingsNewEmailInput.value.trim() });
+});
+settingsPasswordSave.addEventListener("click", () => {
+  settingsPasswordMsg.textContent = "";
+  const newPass = settingsNewPasswordInput.value;
+  if (newPass.length < 4) { settingsPasswordMsg.textContent = "A nova senha precisa ter pelo menos 4 caracteres."; return; }
+  socket.emit("change-password", { currentPassword: settingsCurrentPasswordInput.value, newPassword: newPass });
+});
+
 settingsSave.addEventListener("click", async () => {
   const url = settingsServerInput.value.trim();
   if (!url) return;
-  const newStatus = settingsStatusSelect.value;
-  const newNotif = settingsNotificationsCheckbox.checked;
-  await window.electronAPI.setConfig({ serverUrl: url, notificationsEnabled: newNotif });
-  if (newStatus !== myStatus && socket) socket.emit("set-status", { status: newStatus });
+  await window.electronAPI.setConfig({ serverUrl: url });
   settingsOverlay.classList.add("hidden");
   window.location.reload();
 });
@@ -881,6 +1077,7 @@ function editServerIcon(serverId) {
   input.click();
 }
 function selectServer(serverId) {
+  hideFriendsHome();
   currentServerId = serverId;
   currentChannel = null;
   currentDmUser = null;
@@ -893,13 +1090,28 @@ function selectServer(serverId) {
   socket.emit("select-server", { serverId });
 }
 
+const addServerStepMain = document.getElementById("add-server-step-main");
+const addServerStepCreate = document.getElementById("add-server-step-create");
+const addServerStepJoin = document.getElementById("add-server-step-join");
+
+function showAddServerStep(step) {
+  [addServerStepMain, addServerStepCreate, addServerStepJoin].forEach((el) => el.classList.add("hidden"));
+  step.classList.remove("hidden");
+}
+
 addServerBtn.addEventListener("click", () => {
   newServerNameInput.value = "";
   joinServerCodeInput.value = "";
   joinServerError.textContent = "";
+  showAddServerStep(addServerStepMain);
   addServerOverlay.classList.remove("hidden");
 });
-addServerCancel.addEventListener("click", () => addServerOverlay.classList.add("hidden"));
+document.getElementById("add-server-close-x").addEventListener("click", () => addServerOverlay.classList.add("hidden"));
+document.getElementById("show-create-server-form").addEventListener("click", () => showAddServerStep(addServerStepCreate));
+document.getElementById("show-join-server-form").addEventListener("click", () => showAddServerStep(addServerStepJoin));
+document.getElementById("create-server-back").addEventListener("click", () => showAddServerStep(addServerStepMain));
+document.getElementById("join-server-back").addEventListener("click", () => showAddServerStep(addServerStepMain));
+
 createServerConfirm.addEventListener("click", () => {
   const name = newServerNameInput.value.trim();
   if (!name) return;
@@ -938,6 +1150,7 @@ document.getElementById("menu-create-category").addEventListener("click", () => 
   serverDropdown.classList.add("hidden");
 });
 document.getElementById("menu-change-icon").addEventListener("click", () => { editServerIcon(currentServerId); serverDropdown.classList.add("hidden"); });
+document.getElementById("menu-server-settings").addEventListener("click", () => { openServerSettings(); serverDropdown.classList.add("hidden"); });
 document.getElementById("menu-leave-server").addEventListener("click", () => {
   if (confirm("Tem certeza que quer sair desse servidor?")) socket.emit("leave-server", { serverId: currentServerId });
   serverDropdown.classList.add("hidden");
@@ -950,6 +1163,67 @@ function updateServerMenuVisibility() {
   document.getElementById("menu-create-category").classList.toggle("hidden", !isOwner);
   document.getElementById("menu-change-icon").classList.toggle("hidden", !isOwner);
   document.getElementById("menu-leave-server").classList.toggle("hidden", isOwner || currentServerId === "default-server");
+  document.getElementById("menu-server-settings").classList.toggle("hidden", !isOwner);
+}
+
+// ---------- Página de Configurações do Servidor ----------
+const serverSettingsOverlay = document.getElementById("server-settings-overlay");
+const serverSettingsTitle = document.getElementById("server-settings-title");
+const serverRenameInput = document.getElementById("server-rename-input");
+const serverMembersSettingsList = document.getElementById("server-members-settings-list");
+const serverInviteCodeDisplay = document.getElementById("server-invite-code-display");
+
+function openServerSettings() {
+  const srv = myServers.find((s) => s.id === currentServerId);
+  serverSettingsTitle.textContent = srv ? srv.name : "Servidor";
+  serverRenameInput.value = srv ? srv.name : "";
+  serverInviteCodeDisplay.value = srv?.inviteCode || "";
+  document.querySelectorAll(".server-settings-nav-item").forEach((t) => t.classList.remove("active"));
+  document.querySelector('.server-settings-nav-item[data-tab="overview"]').classList.add("active");
+  document.querySelectorAll(".server-settings-tab").forEach((t) => t.classList.add("hidden"));
+  document.getElementById("settings-tab-overview").classList.remove("hidden");
+  socket.emit("get-server-members", { serverId: currentServerId });
+  serverSettingsOverlay.classList.remove("hidden");
+}
+document.getElementById("server-settings-close").addEventListener("click", () => serverSettingsOverlay.classList.add("hidden"));
+document.querySelectorAll(".server-settings-nav-item[data-tab]").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".server-settings-nav-item").forEach((t) => t.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelectorAll(".server-settings-tab").forEach((t) => t.classList.add("hidden"));
+    document.getElementById(`settings-tab-${tab.dataset.tab}`).classList.remove("hidden");
+  });
+});
+
+document.getElementById("server-rename-save").addEventListener("click", () => {
+  const name = serverRenameInput.value.trim();
+  if (!name) return;
+  socket.emit("rename-server", { serverId: currentServerId, name });
+});
+document.getElementById("server-invite-regenerate").addEventListener("click", () => {
+  if (confirm("Isso invalida o código de convite antigo. Continuar?")) socket.emit("regenerate-invite", { serverId: currentServerId });
+});
+document.getElementById("server-delete-confirm").addEventListener("click", () => {
+  const srv = myServers.find((s) => s.id === currentServerId);
+  if (confirm(`Tem certeza que quer excluir "${srv?.name}"? Essa ação NÃO pode ser desfeita.`)) {
+    socket.emit("delete-server", { serverId: currentServerId });
+    serverSettingsOverlay.classList.add("hidden");
+  }
+});
+
+function renderServerMembersSettings(members) {
+  serverMembersSettingsList.innerHTML = members.map((m) => `
+    <div class="friend-row" data-username="${escapeHtml(m.username)}">
+      ${avatarHtml(m.username, m.avatar, 32)}
+      <span class="friend-name">${escapeHtml(m.username)} <small style="color:var(--text-muted)">${m.role === "owner" ? "Dono" : m.role === "moderator" ? "Moderador" : "Membro"}</small></span>
+      ${m.role !== "owner" ? `<button class="ghost-btn settings-kick-btn">Remover</button>` : ""}
+    </div>`).join("");
+  serverMembersSettingsList.querySelectorAll(".settings-kick-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const uname = e.target.closest(".friend-row").dataset.username;
+      if (confirm(`Remover ${uname} desse servidor?`)) socket.emit("kick-member", { serverId: currentServerId, targetUsername: uname });
+    });
+  });
 }
 
 // ---------- Categorias ----------
@@ -1093,12 +1367,37 @@ function renderHistory(history) {
   lastMsgAuthor = null; lastMsgTime = 0;
   if (!history.length) {
     const ch = channels.find((c) => c.id === currentChannel);
+    const srv = myServers.find((s) => s.id === currentServerId);
+    const checklistHtml = myRole === "owner" ? `
+      <div class="welcome-checklist">
+        <button class="welcome-check-item" id="welcome-invite">
+          <span class="welcome-check-icon">${ICONS.userPlus}</span>
+          <span>Convide seus amigos</span>
+          <span class="welcome-check-arrow">›</span>
+        </button>
+        <button class="welcome-check-item" id="welcome-icon">
+          <span class="welcome-check-icon">${ICONS.image}</span>
+          <span>Personalize seu servidor com um ícone</span>
+          <span class="welcome-check-arrow">›</span>
+        </button>
+        <button class="welcome-check-item" id="welcome-message">
+          <span class="welcome-check-icon">${ICONS.mail}</span>
+          <span>Envie sua primeira mensagem</span>
+          <span class="welcome-check-arrow">›</span>
+        </button>
+      </div>` : "";
     messagesEl.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">${ICONS.hash}</div>
         <h2>Bem-vindo a #${escapeHtml(ch ? ch.name : "")}</h2>
         <p>Esse é o começo da conversa nesse canal. Manda a primeira mensagem!</p>
+        ${checklistHtml}
       </div>`;
+    if (myRole === "owner") {
+      document.getElementById("welcome-invite")?.addEventListener("click", () => document.getElementById("menu-invite").click());
+      document.getElementById("welcome-icon")?.addEventListener("click", () => editServerIcon(currentServerId));
+      document.getElementById("welcome-message")?.addEventListener("click", () => messageInput.focus());
+    }
     return;
   }
   history.forEach(appendMessage);
@@ -1327,7 +1626,7 @@ function renderMemberList(users) {
       const roleBadge = myRole === "owner" && u.username !== username
         ? `<button class="role-toggle-btn" data-tooltip="Tornar moderador ou membro">${ICONS.shield}</button>` : "";
       li.innerHTML = `${avatarWithStatusHtml(u.username, u.avatar, 26, u.status)}<span class="member-name">${escapeHtml(u.username)}</span>${roleBadge}`;
-      li.querySelector(".member-name").addEventListener("click", () => { if (u.username !== username) openDm(u.username); });
+      li.querySelector(".member-name").addEventListener("click", () => openUserProfile(u.username));
       const roleBtn = li.querySelector(".role-toggle-btn");
       if (roleBtn) roleBtn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -1356,6 +1655,7 @@ function renderDmList(users) {
   });
 }
 function openDm(withUsername) {
+  hideFriendsHome();
   currentDmUser = withUsername;
   currentChannel = null;
   lastMsgAuthor = null; lastMsgTime = 0;
