@@ -1,6 +1,6 @@
 {
   "name": "chatapp-desktop",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "description": "App de chat + compartilhamento de tela (estilo Discord) para Windows",
   "main": "main.js",
   "dependencies": {
@@ -18,8 +18,9 @@
   },
   "build": {
     "appId": "com.seuapp.chat",
-    "productName": "ChatApp",
+    "productName": "QG",
     "win": {
+      "icon": "build/icon.ico",
       "target": "nsis"
     },
     "nsis": {
@@ -29,7 +30,8 @@
     "files": [
       "main.js",
       "preload.js",
-      "renderer/**/*"
+      "renderer/**/*",
+      "build/**/*"
     ],
     "publish": {
       "provider": "github",

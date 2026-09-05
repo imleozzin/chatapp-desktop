@@ -5,6 +5,8 @@
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
+const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 const { Server } = require("socket.io");
 const { createClient } = require("@supabase/supabase-js");
 
@@ -162,23 +164,76 @@ function broadcastOnlineForDm() {
 
 io.on("connection", (socket) => {
   // ---------- Identificação inicial (uma vez por conexão) ----------
-  socket.on("hello", async ({ username, avatar }) => {
-    if (usernameToSocket.has(username) && usernameToSocket.get(username) !== socket.id) {
-      socket.emit("join-error", "Esse nome já está em uso. Escolha outro.");
-      return;
-    }
+  // ---------- Autenticação ----------
+  async function completeAuth(username, avatar) {
     usernameToSocket.set(username, socket.id);
     userStatus.set(username, "online");
-    await upsertUser(username, avatar);
-    await ensureMembership(username, DEFAULT_SERVER_ID, username.toLowerCase() === ADMIN_USERNAME);
-
     socket.data.username = username;
     socket.data.avatar = avatar || null;
+    await ensureMembership(username, DEFAULT_SERVER_ID, username.toLowerCase() === ADMIN_USERNAME);
+
+    const token = crypto.randomBytes(24).toString("hex");
+    await db.from("sessions").insert({ token, username });
+    socket.emit("auth-success", { username, avatar: avatar || null, token });
 
     const servers = await getUserServers(username);
     socket.emit("server-list", servers);
     await sendFriendsList(username);
     broadcastOnlineForDm();
+  }
+
+  socket.on("register", async ({ username, password, avatar }) => {
+    username = (username || "").trim().slice(0, 24);
+    if (!username || !password || password.length < 4) {
+      socket.emit("auth-error", "Preencha um nome e uma senha com pelo menos 4 caracteres.");
+      return;
+    }
+    const { data: existing } = await db.from("users").select("*").eq("username", username).maybeSingle();
+    if (existing && existing.password_hash) {
+      socket.emit("auth-error", "Esse nome de usuário já está em uso.");
+      return;
+    }
+    const password_hash = await bcrypt.hash(password, 10);
+    if (existing) await db.from("users").update({ password_hash, avatar: avatar || existing.avatar }).eq("username", username);
+    else await db.from("users").insert({ username, avatar: avatar || null, role: "member", password_hash });
+
+    await completeAuth(username, avatar || existing?.avatar || null);
+  });
+
+  socket.on("login", async ({ username, password }) => {
+    username = (username || "").trim();
+    const { data: user } = await db.from("users").select("*").eq("username", username).maybeSingle();
+    if (!user || !user.password_hash) {
+      socket.emit("auth-error", "Usuário não encontrado.");
+      return;
+    }
+    const ok = await bcrypt.compare(password || "", user.password_hash);
+    if (!ok) {
+      socket.emit("auth-error", "Senha incorreta.");
+      return;
+    }
+    if (usernameToSocket.has(username) && usernameToSocket.get(username) !== socket.id) {
+      socket.emit("auth-error", "Essa conta já está conectada em outro lugar.");
+      return;
+    }
+    await completeAuth(username, user.avatar);
+  });
+
+  socket.on("login-with-token", async ({ token }) => {
+    if (!token) { socket.emit("auth-error", "Sessão expirada, faça login de novo."); return; }
+    const { data: session } = await db.from("sessions").select("*").eq("token", token).maybeSingle();
+    if (!session) { socket.emit("auth-error", "Sessão expirada, faça login de novo."); return; }
+    const { data: user } = await db.from("users").select("*").eq("username", session.username).maybeSingle();
+    if (!user) { socket.emit("auth-error", "Sessão expirada, faça login de novo."); return; }
+    if (usernameToSocket.has(user.username) && usernameToSocket.get(user.username) !== socket.id) {
+      socket.emit("auth-error", "Essa conta já está conectada em outro lugar.");
+      return;
+    }
+    await completeAuth(user.username, user.avatar);
+  });
+
+  socket.on("logout", async ({ token }) => {
+    if (token) await db.from("sessions").delete().eq("token", token);
   });
 
   socket.on("update-avatar", async (avatarDataUrl) => {

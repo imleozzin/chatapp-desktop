@@ -31,6 +31,7 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: "#191428",
     frame: false, // sem a barra/menu nativo do Windows — usamos uma barra própria
+    icon: path.join(__dirname, "build", "icon.ico"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
