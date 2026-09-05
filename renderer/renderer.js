@@ -39,6 +39,7 @@ const ICONS = {
   logout: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
   clock: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  thread: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 9v6"/><path d="M6 9a9 9 0 0 0 9 9"/></svg>',
 };
 
 
@@ -797,6 +798,38 @@ function connectSocket(serverUrl) {
   });
   socket.on("roles-list", ({ serverId, roles, memberRoles }) => { if (serverId === currentServerId) renderRolesSettings(roles, memberRoles); });
   socket.on("webhooks-list", ({ serverId, webhooks }) => { if (serverId === currentServerId) renderWebhooksSettings(webhooks); });
+
+  socket.on("threads-list", ({ channelId, threads }) => {
+    if (channelId !== currentChannel) return;
+    threadsByRootMessage.clear();
+    threads.forEach((t) => { if (t.root_message_id) threadsByRootMessage.set(t.root_message_id, { id: t.id, title: t.title, replyCount: t.replyCount }); });
+    threadsByRootMessage.forEach((_, messageId) => renderThreadPillFor(messageId));
+  });
+  socket.on("thread-created", ({ channelId, thread }) => {
+    if (channelId !== currentChannel || !thread.root_message_id) return;
+    threadsByRootMessage.set(thread.root_message_id, { id: thread.id, title: thread.title, replyCount: thread.replyCount || 0 });
+    renderThreadPillFor(thread.root_message_id);
+  });
+  socket.on("thread-history", ({ threadId, thread, messages }) => {
+    if (currentThreadId !== threadId) return;
+    threadTitleDisplay.textContent = thread.title;
+    threadMessagesEl.innerHTML = "";
+    messages.forEach(appendThreadMessage);
+  });
+  socket.on("thread-message", ({ threadId, message }) => {
+    for (const [rootId, t] of threadsByRootMessage) {
+      if (t.id === threadId) { t.replyCount++; renderThreadPillFor(rootId); break; }
+    }
+    if (currentThreadId === threadId) appendThreadMessage(message);
+  });
+  socket.on("thread-deleted", ({ channelId, threadId }) => {
+    if (channelId === currentChannel) {
+      for (const [rootId, t] of threadsByRootMessage) {
+        if (t.id === threadId) { threadsByRootMessage.delete(rootId); renderThreadPillFor(rootId); break; }
+      }
+    }
+    if (currentThreadId === threadId) closeThreadPanel();
+  });
 
   socket.on("chat-history", renderHistory);
   socket.on("chat-message", (msg) => {
@@ -1671,6 +1704,8 @@ function joinChannel(channel) {
   replyTarget = null;
   hideReplyPreview();
   hideSlowModeBanner();
+  threadsByRootMessage.clear();
+  closeThreadPanel();
   const ch = channels.find((c) => c.id === channel);
   currentChannelName.textContent = "#" + (ch ? ch.name : channel);
   messagesEl.innerHTML = "";
@@ -1828,6 +1863,7 @@ function messageRowHtml(msg, isDm, grouped) {
   const hoverActionsHtml = `
       <div class="msg-hover-actions">
         ${!isDm ? `<button class="msg-react-btn" data-tooltip="Adicionar reação">${ICONS.reactAdd}</button>` : ""}
+        ${!isDm ? `<button class="msg-thread-btn" data-tooltip="Thread">${ICONS.thread}</button>` : ""}
         ${actions}
       </div>`;
 
@@ -1856,6 +1892,7 @@ function appendMessage(msg) {
   wireMessageActions(div, msg, false);
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+  renderThreadPillFor(msg.id);
 }
 function wireMessageActions(div, msg, isDm) {
   const reactBtn = div.querySelector(".msg-react-btn");
@@ -1872,6 +1909,14 @@ function wireMessageActions(div, msg, isDm) {
   if (pinBtn) pinBtn.addEventListener("click", () => socket.emit("pin-message", { messageId: msg.id }));
   const replyBtn = div.querySelector(".msg-reply-btn");
   if (replyBtn) replyBtn.addEventListener("click", () => startReply(msg));
+  const threadBtn = div.querySelector(".msg-thread-btn");
+  if (threadBtn) threadBtn.addEventListener("click", () => {
+    const existing = threadsByRootMessage.get(msg.id);
+    if (existing) { openThreadPanel(existing.id); return; }
+    const title = prompt("Título da nova thread:", (msg.text || "Nova thread").slice(0, 60));
+    if (!title || !title.trim()) return;
+    socket.emit("create-thread", { serverId: currentServerId, channelId: currentChannel, rootMessageId: msg.id, title: title.trim() });
+  });
   resolveReplyQuotes();
 }
 function startReply(msg) {
@@ -1892,6 +1937,84 @@ function resolveReplyQuotes() {
     }
   });
 }
+
+// ---------- Threads (conversas ramificadas dentro de um canal) ----------
+const threadsByRootMessage = new Map(); // rootMessageId -> { id, title, replyCount }
+let currentThreadId = null;
+const threadOverlay = document.getElementById("thread-overlay");
+const threadTitleDisplay = document.getElementById("thread-title-display");
+const threadMessagesEl = document.getElementById("thread-messages");
+const threadClose = document.getElementById("thread-close");
+const threadDeleteBtn = document.getElementById("thread-delete-btn");
+const threadMessageForm = document.getElementById("thread-message-form");
+const threadMessageInput = document.getElementById("thread-message-input");
+threadDeleteBtn.innerHTML = ICONS.trash;
+
+function threadPillLabel(t) {
+  return `${ICONS.thread} ${t.replyCount} ${t.replyCount === 1 ? "resposta" : "respostas"}`;
+}
+function renderThreadPillFor(messageId) {
+  const body = messagesEl.querySelector(`.msg[data-id="${messageId}"] .msg-body`);
+  if (!body) return;
+  let pill = body.querySelector(".thread-pill");
+  const t = threadsByRootMessage.get(messageId);
+  if (!t) { if (pill) pill.remove(); return; }
+  if (!pill) {
+    pill = document.createElement("button");
+    pill.className = "thread-pill";
+    pill.type = "button";
+    pill.addEventListener("click", () => openThreadPanel(threadsByRootMessage.get(messageId).id));
+    body.appendChild(pill);
+  }
+  pill.innerHTML = threadPillLabel(t);
+}
+function openThreadPanel(threadId) {
+  currentThreadId = threadId;
+  threadMessagesEl.innerHTML = "";
+  threadTitleDisplay.textContent = "Carregando...";
+  threadDeleteBtn.classList.toggle("hidden", !hasPerm(PERMS.MANAGE_CHANNELS));
+  threadOverlay.classList.remove("hidden");
+  socket.emit("get-thread-messages", { threadId });
+}
+function closeThreadPanel() {
+  currentThreadId = null;
+  threadOverlay.classList.add("hidden");
+}
+threadClose.addEventListener("click", closeThreadPanel);
+threadDeleteBtn.addEventListener("click", () => {
+  if (!currentThreadId || !confirm("Apagar essa thread e todas as respostas dela?")) return;
+  socket.emit("delete-thread", { serverId: currentServerId, channelId: currentChannel, threadId: currentThreadId });
+});
+function threadMessageHtml(msg) {
+  const { name: displayName, avatar: displayAvatar, color: roleColor } = resolveDisplay(msg.username, msg.avatar, false);
+  const color = roleColor || colorForUsername(msg.username);
+  const time = new Date(msg.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return `
+    <div class="msg-gutter">${avatarHtml(msg.username, displayAvatar, 32)}</div>
+    <div class="msg-body">
+      <div class="msg-meta">
+        <span class="msg-author" style="color:${color}">${escapeHtml(displayName)}</span>
+        <span class="msg-time">${time}</span>
+      </div>
+      <div class="msg-text-wrap">${msg.text ? `<div class="msg-text">${renderMessageText(msg.text, false)}</div>` : ""}</div>
+    </div>`;
+}
+function appendThreadMessage(msg) {
+  const div = document.createElement("div");
+  div.className = "msg";
+  div.dataset.id = msg.id;
+  div.innerHTML = threadMessageHtml(msg);
+  threadMessagesEl.appendChild(div);
+  threadMessagesEl.scrollTop = threadMessagesEl.scrollHeight;
+}
+threadMessageForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = threadMessageInput.value.trim();
+  if (!text || !currentThreadId) return;
+  socket.emit("thread-message", { threadId: currentThreadId, text });
+  threadMessageInput.value = "";
+});
+
 function startEditMessage(div, msg, isDm) {
   const wrap = div.querySelector(".msg-text-wrap");
   wrap.innerHTML = `<input type="text" class="edit-message-input" value="${escapeHtml(msg.text || "")}" />`;

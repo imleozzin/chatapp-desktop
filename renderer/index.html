@@ -417,6 +417,25 @@
     </div>
   </div>
 
+  <!-- Modal: thread (conversa ramificada a partir de uma mensagem) -->
+  <div id="thread-overlay" class="picker-overlay hidden">
+    <div class="picker-modal thread-modal">
+      <div class="thread-modal-header">
+        <span id="thread-title-display" class="thread-modal-title">Thread</span>
+        <div class="thread-modal-header-actions">
+          <button id="thread-delete-btn" class="icon-btn hidden" data-tooltip="Apagar thread"></button>
+          <button id="thread-close" class="modal-close-x" style="position:static;"></button>
+        </div>
+      </div>
+      <div id="thread-messages" class="messages"></div>
+      <form id="thread-message-form" class="message-form">
+        <div class="message-input-wrap">
+          <input id="thread-message-input" type="text" placeholder="Responder na thread..." autocomplete="off" />
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal: apelido e foto neste servidor (diferente do perfil global da conta) -->
   <div id="server-profile-overlay" class="picker-overlay hidden">
     <div class="picker-modal">
