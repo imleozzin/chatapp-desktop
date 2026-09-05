@@ -701,6 +701,7 @@ function connectSocket(serverUrl) {
     viewProfileOverlay.classList.remove("hidden");
   });
   socket.on("server-members-list", ({ serverId, members }) => { if (serverId === currentServerId) renderServerMembersSettings(members); });
+  socket.on("server-bans-list", ({ serverId, bans }) => { if (serverId === currentServerId) renderServerBansSettings(bans); });
   socket.on("kicked-from-server", ({ serverId }) => {
     if (serverId === currentServerId) {
       currentServerId = null;
@@ -1180,6 +1181,7 @@ const serverSettingsOverlay = document.getElementById("server-settings-overlay")
 const serverSettingsTitle = document.getElementById("server-settings-title");
 const serverRenameInput = document.getElementById("server-rename-input");
 const serverMembersSettingsList = document.getElementById("server-members-settings-list");
+const serverBansSettingsList = document.getElementById("server-bans-settings-list");
 const serverInviteCodeDisplay = document.getElementById("server-invite-code-display");
 
 function openServerSettings() {
@@ -1192,6 +1194,7 @@ function openServerSettings() {
   document.querySelectorAll(".server-settings-tab").forEach((t) => t.classList.add("hidden"));
   document.getElementById("settings-tab-overview").classList.remove("hidden");
   socket.emit("get-server-members", { serverId: currentServerId });
+  socket.emit("get-server-bans", { serverId: currentServerId });
   serverSettingsOverlay.classList.remove("hidden");
 }
 document.getElementById("server-settings-close").addEventListener("click", () => serverSettingsOverlay.classList.add("hidden"));
@@ -1225,12 +1228,37 @@ function renderServerMembersSettings(members) {
     <div class="friend-row" data-username="${escapeHtml(m.username)}">
       ${avatarHtml(m.username, m.avatar, 32)}
       <span class="friend-name">${escapeHtml(m.username)} <small style="color:var(--text-muted)">${m.role === "owner" ? "Dono" : m.role === "moderator" ? "Moderador" : "Membro"}</small></span>
-      ${m.role !== "owner" ? `<button class="ghost-btn settings-kick-btn">Remover</button>` : ""}
+      ${m.role !== "owner" ? `<button class="ghost-btn settings-kick-btn">Remover</button><button class="ghost-btn danger settings-ban-btn">Banir</button>` : ""}
     </div>`).join("");
   serverMembersSettingsList.querySelectorAll(".settings-kick-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       const uname = e.target.closest(".friend-row").dataset.username;
       if (confirm(`Remover ${uname} desse servidor?`)) socket.emit("kick-member", { serverId: currentServerId, targetUsername: uname });
+    });
+  });
+  serverMembersSettingsList.querySelectorAll(".settings-ban-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const uname = e.target.closest(".friend-row").dataset.username;
+      if (confirm(`Banir ${uname} desse servidor? A pessoa não vai conseguir voltar nem com um convite novo, até você desbanir.`)) {
+        socket.emit("ban-member", { serverId: currentServerId, targetUsername: uname });
+      }
+    });
+  });
+}
+
+function renderServerBansSettings(bans) {
+  serverBansSettingsList.innerHTML = bans.length
+    ? bans.map((b) => `
+      <div class="friend-row" data-username="${escapeHtml(b.username)}">
+        ${avatarHtml(b.username, null, 32)}
+        <span class="friend-name">${escapeHtml(b.username)}</span>
+        <button class="ghost-btn settings-unban-btn">Desbanir</button>
+      </div>`).join("")
+    : `<div class="friend-row" style="opacity:0.6;">Ninguém banido por aqui.</div>`;
+  serverBansSettingsList.querySelectorAll(".settings-unban-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const uname = e.target.closest(".friend-row").dataset.username;
+      socket.emit("unban-member", { serverId: currentServerId, targetUsername: uname });
     });
   });
 }

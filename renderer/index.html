@@ -441,6 +441,7 @@
         <button class="server-settings-nav-item active" data-tab="overview">Visão geral</button>
         <button class="server-settings-nav-item" data-tab="members">Membros</button>
         <button class="server-settings-nav-item" data-tab="invites">Convites</button>
+        <button class="server-settings-nav-item" data-tab="bans">Banidos</button>
         <div class="server-settings-nav-divider"></div>
         <button class="server-settings-nav-item danger" data-tab="delete">Excluir servidor</button>
       </div>
@@ -464,6 +465,12 @@
           <p class="subtitle" style="text-align:left;">Compartilhe esse código para convidar pessoas.</p>
           <input id="server-invite-code-display" type="text" class="modal-input" readonly />
           <button id="server-invite-regenerate" class="ghost-btn">Gerar novo código</button>
+        </div>
+
+        <div id="settings-tab-bans" class="server-settings-tab hidden">
+          <h2>Banidos</h2>
+          <p class="subtitle" style="text-align:left;">Quem está aqui não consegue voltar a esse servidor, nem com um convite novo.</p>
+          <div id="server-bans-settings-list" class="friends-list"></div>
         </div>
 
         <div id="settings-tab-delete" class="server-settings-tab hidden">
