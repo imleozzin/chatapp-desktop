@@ -719,3 +719,7 @@ body { display: flex; flex-direction: column; }
 .auth-switch { text-align: center; font-size: 13px; color: var(--text-muted); margin-top: 14px; }
 .auth-switch a { color: var(--accent); text-decoration: none; font-weight: 600; }
 .auth-switch a:hover { text-decoration: underline; }
+
+/* ---------- Data de nascimento no registro ---------- */
+.birthdate-row { display: flex; gap: 8px; }
+.birthdate-row select { flex: 1; margin-bottom: 16px; }

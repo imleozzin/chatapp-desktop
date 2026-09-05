@@ -53,10 +53,18 @@
           <button id="login-avatar-btn" type="button" class="ghost-btn">Escolher foto</button>
         </div>
 
+        <label class="field-label">E-mail (opcional)</label>
+        <input id="register-email-input" type="email" class="modal-input" placeholder="seu@email.com" />
         <label class="field-label">Nome de usuário</label>
         <input id="register-username-input" type="text" class="modal-input" maxlength="24" />
         <label class="field-label">Senha</label>
         <input id="register-password-input" type="password" class="modal-input" />
+        <label class="field-label">Data de nascimento</label>
+        <div class="birthdate-row">
+          <select id="register-day-select" class="modal-input"></select>
+          <select id="register-month-select" class="modal-input"></select>
+          <select id="register-year-select" class="modal-input"></select>
+        </div>
         <button id="register-submit-btn" class="primary-btn full-width">Criar conta</button>
         <p id="register-error" class="login-error"></p>
         <p class="auth-switch">Já tem uma conta? <a href="#" id="show-login-link">Entrar</a></p>

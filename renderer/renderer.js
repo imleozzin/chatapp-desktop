@@ -100,8 +100,19 @@ const loginError = document.getElementById("login-error");
 
 const registerUsernameInput = document.getElementById("register-username-input");
 const registerPasswordInput = document.getElementById("register-password-input");
+const registerEmailInput = document.getElementById("register-email-input");
+const registerDaySelect = document.getElementById("register-day-select");
+const registerMonthSelect = document.getElementById("register-month-select");
+const registerYearSelect = document.getElementById("register-year-select");
 const registerSubmitBtn = document.getElementById("register-submit-btn");
 const registerError = document.getElementById("register-error");
+
+// Popula os seletores de data de nascimento
+const MONTHS_PT = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+registerDaySelect.innerHTML = `<option value="">Dia</option>` + Array.from({length:31}, (_,i)=>`<option value="${i+1}">${i+1}</option>`).join("");
+registerMonthSelect.innerHTML = `<option value="">Mês</option>` + MONTHS_PT.map((m,i)=>`<option value="${i+1}">${m}</option>`).join("");
+const thisYear = new Date().getFullYear();
+registerYearSelect.innerHTML = `<option value="">Ano</option>` + Array.from({length:100}, (_,i)=>`<option value="${thisYear-i}">${thisYear-i}</option>`).join("");
 
 const loginAvatarBtn = document.getElementById("login-avatar-btn");
 const loginAvatarInput = document.getElementById("login-avatar-input");
@@ -485,10 +496,14 @@ loginPasswordInput.addEventListener("keydown", (e) => e.key === "Enter" && doLog
 function doRegister() {
   const uname = registerUsernameInput.value.trim();
   const pass = registerPasswordInput.value;
+  const email = registerEmailInput.value.trim();
+  const day = registerDaySelect.value, month = registerMonthSelect.value, year = registerYearSelect.value;
   registerError.textContent = "";
   if (!uname || !pass) { registerError.textContent = "Preencha usuário e senha."; return; }
   if (pass.length < 4) { registerError.textContent = "A senha precisa ter pelo menos 4 caracteres."; return; }
-  socket.emit("register", { username: uname, password: pass, avatar: myAvatar });
+  if (!day || !month || !year) { registerError.textContent = "Preencha sua data de nascimento."; return; }
+  const birthDate = `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+  socket.emit("register", { username: uname, password: pass, avatar: myAvatar, email: email || null, birthDate });
 }
 registerSubmitBtn.addEventListener("click", doRegister);
 registerPasswordInput.addEventListener("keydown", (e) => e.key === "Enter" && doRegister());
