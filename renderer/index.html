@@ -82,35 +82,41 @@
     </nav>
 
     <aside class="channel-list">
-      <div class="channel-list-header">
-        <button id="server-name-btn" class="server-name-btn">
-          <span id="current-server-name">QG</span>
-          <span class="server-chevron"></span>
-        </button>
-        <div id="server-dropdown" class="server-dropdown hidden">
-          <button id="menu-invite" class="server-dropdown-item"><span></span>Convidar para o servidor</button>
-          <button id="menu-create-channel" class="server-dropdown-item"><span></span>Criar canal</button>
-          <button id="menu-create-category" class="server-dropdown-item"><span></span>Criar categoria</button>
-          <button id="menu-change-icon" class="server-dropdown-item"><span></span>Trocar ícone do servidor</button>
-          <button id="menu-server-settings" class="server-dropdown-item"><span></span>Configurações do servidor</button>
-          <div class="server-dropdown-divider"></div>
-          <button id="menu-leave-server" class="server-dropdown-item danger"><span></span>Sair do servidor</button>
+      <div id="server-sidebar-sections">
+        <div class="channel-list-header">
+          <button id="server-name-btn" class="server-name-btn">
+            <span id="current-server-name">QG</span>
+            <span class="server-chevron"></span>
+          </button>
+          <div id="server-dropdown" class="server-dropdown hidden">
+            <button id="menu-invite" class="server-dropdown-item"><span></span>Convidar para o servidor</button>
+            <button id="menu-create-channel" class="server-dropdown-item"><span></span>Criar canal</button>
+            <button id="menu-create-category" class="server-dropdown-item"><span></span>Criar categoria</button>
+            <button id="menu-change-icon" class="server-dropdown-item"><span></span>Trocar ícone do servidor</button>
+            <button id="menu-server-settings" class="server-dropdown-item"><span></span>Configurações do servidor</button>
+            <div class="server-dropdown-divider"></div>
+            <button id="menu-leave-server" class="server-dropdown-item danger"><span></span>Sair do servidor</button>
+          </div>
         </div>
+
+        <div class="section-header">
+          <span>Canais de Texto</span>
+          <span>
+            <button id="add-text-channel" class="icon-btn hidden" data-tooltip="Criar canal de texto">+</button>
+          </span>
+        </div>
+        <ul id="text-channels" class="channel-items"></ul>
+
+        <div class="section-header">
+          <span>Canais de Voz</span>
+          <button id="add-voice-channel" class="icon-btn hidden" data-tooltip="Criar canal de voz">+</button>
+        </div>
+        <ul id="voice-channels" class="channel-items"></ul>
       </div>
 
-      <div class="section-header">
-        <span>Canais de Texto</span>
-        <span>
-          <button id="add-text-channel" class="icon-btn hidden" data-tooltip="Criar canal de texto">+</button>
-        </span>
+      <div id="home-sidebar-header" class="home-sidebar-header hidden">
+        <span class="friends-home-icon"></span> Amigos
       </div>
-      <ul id="text-channels" class="channel-items"></ul>
-
-      <div class="section-header">
-        <span>Canais de Voz</span>
-        <button id="add-voice-channel" class="icon-btn hidden" data-tooltip="Criar canal de voz">+</button>
-      </div>
-      <ul id="voice-channels" class="channel-items"></ul>
 
       <div class="section-header">
         <span>Mensagens Diretas</span>
@@ -265,7 +271,7 @@
       </form>
     </main>
 
-    <aside class="member-list">
+    <aside class="member-list" id="member-list-panel">
       <ul id="member-items"></ul>
     </aside>
   </div>

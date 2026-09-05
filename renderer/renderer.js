@@ -349,6 +349,9 @@ function showFriendsHome() {
   document.getElementById("channel-header").classList.add("hidden");
   messagesEl.classList.add("hidden");
   document.getElementById("message-form").classList.add("hidden");
+  document.getElementById("server-sidebar-sections").classList.add("hidden");
+  document.getElementById("home-sidebar-header").classList.remove("hidden");
+  document.getElementById("member-list-panel").classList.add("hidden");
   socket.emit("get-friends");
 }
 function hideFriendsHome() {
@@ -356,6 +359,9 @@ function hideFriendsHome() {
   document.getElementById("channel-header").classList.remove("hidden");
   messagesEl.classList.remove("hidden");
   document.getElementById("message-form").classList.remove("hidden");
+  document.getElementById("server-sidebar-sections").classList.remove("hidden");
+  document.getElementById("home-sidebar-header").classList.add("hidden");
+  document.getElementById("member-list-panel").classList.remove("hidden");
 }
 
 friendsRailBtn.addEventListener("click", showFriendsHome);
@@ -734,9 +740,13 @@ function connectSocket(serverUrl) {
     }
   });
   socket.on("message-updated", updateMessageReactions);
+  socket.on("message-embed", ({ messageId, embed }) => {
+    const el = messagesEl.querySelector(`.msg[data-id="${messageId}"] .msg-embed-wrap`);
+    if (el) el.innerHTML = linkEmbedHtml(embed);
+  });
   socket.on("message-deleted", ({ messageId }) => { const el = messagesEl.querySelector(`.msg[data-id="${messageId}"]`); if (el) el.remove(); });
   socket.on("system-message", appendSystemMessage);
-  socket.on("user-list", renderMemberList);
+  socket.on("user-list", ({ serverId, members }) => { if (serverId === currentServerId) renderMemberList(members); });
   socket.on("online-users", (users) => { lastOnlineUsers = users; renderDmList(users); });
   socket.on("user-typing", ({ username: who }) => showTyping(who));
 
@@ -873,8 +883,7 @@ function applyStaticIcons() {
   chevrons.forEach((c) => (c.innerHTML = ICONS.chevron));
   const menuIcons = { "menu-invite": ICONS.mail, "menu-create-channel": ICONS.channelPlus, "menu-create-category": ICONS.folderPlus, "menu-change-icon": ICONS.image, "menu-leave-server": ICONS.logout };
   Object.entries(menuIcons).forEach(([id, svg]) => { const el = document.querySelector(`#${id} span`); if (el) el.innerHTML = svg; });
-  const friendsHomeIcon = document.querySelector(".friends-home-icon");
-  if (friendsHomeIcon) friendsHomeIcon.innerHTML = ICONS.friends;
+  document.querySelectorAll(".friends-home-icon").forEach((el) => { el.innerHTML = ICONS.friends; });
 }
 applyStaticIcons();
 
@@ -1407,6 +1416,19 @@ let lastMsgAuthor = null;
 let lastMsgTime = 0;
 const GROUP_WINDOW_MS = 5 * 60 * 1000; // 5 minutos
 
+function linkEmbedHtml(embed) {
+  if (!embed) return "";
+  return `
+    <a class="msg-embed" href="${embed.url}" target="_blank" rel="noopener">
+      ${embed.image ? `<img class="msg-embed-image" src="${embed.image}" />` : ""}
+      <div class="msg-embed-body">
+        ${embed.siteName ? `<div class="msg-embed-site">${escapeHtml(embed.siteName)}</div>` : ""}
+        ${embed.title ? `<div class="msg-embed-title">${escapeHtml(embed.title)}</div>` : ""}
+        ${embed.description ? `<div class="msg-embed-desc">${escapeHtml(embed.description)}</div>` : ""}
+      </div>
+    </a>`;
+}
+
 function messageRowHtml(msg, isDm, grouped) {
   const author = isDm ? msg.from : msg.username;
   const isMine = author === username;
@@ -1454,6 +1476,7 @@ function messageRowHtml(msg, isDm, grouped) {
       ${hoverActionsHtml}
       ${replyQuoteHtml}
       <div class="msg-text-wrap">${msg.text ? `<div class="msg-text">${renderMessageText(msg.text)}</div>` : ""}</div>
+      <div class="msg-embed-wrap">${linkEmbedHtml(msg.embed)}</div>
       ${attachmentHtml}
       ${reactionsHtml}
     </div>`;
@@ -1611,11 +1634,14 @@ function renderMemberList(users) {
   lastMemberList = users || [];
   memberItems.innerHTML = "";
 
-  const owners = lastMemberList.filter((u) => u.role === "owner");
-  const moderators = lastMemberList.filter((u) => u.role === "moderator");
-  const members = lastMemberList.filter((u) => !u.role || u.role === "member");
+  const online = lastMemberList.filter((u) => u.status !== "offline");
+  const offline = lastMemberList.filter((u) => u.status === "offline");
 
-  const renderGroup = (label, list) => {
+  const owners = online.filter((u) => u.role === "owner");
+  const moderators = online.filter((u) => u.role === "moderator");
+  const members = online.filter((u) => !u.role || u.role === "member");
+
+  const renderGroup = (label, list, dimmed) => {
     if (!list.length) return;
     const header = document.createElement("li");
     header.className = "member-group-header";
@@ -1623,6 +1649,7 @@ function renderMemberList(users) {
     memberItems.appendChild(header);
     list.forEach((u) => {
       const li = document.createElement("li");
+      if (dimmed) li.className = "member-offline";
       const roleBadge = myRole === "owner" && u.username !== username
         ? `<button class="role-toggle-btn" data-tooltip="Tornar moderador ou membro">${ICONS.shield}</button>` : "";
       li.innerHTML = `${avatarWithStatusHtml(u.username, u.avatar, 26, u.status)}<span class="member-name">${escapeHtml(u.username)}</span>${roleBadge}`;
@@ -1640,6 +1667,7 @@ function renderMemberList(users) {
   renderGroup("Dono", owners);
   renderGroup("Moderadores", moderators);
   renderGroup("Membros", members);
+  renderGroup("Offline", offline, true);
 }
 
 // ---------- Mensagens diretas ----------
