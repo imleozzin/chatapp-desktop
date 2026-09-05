@@ -712,6 +712,7 @@ function connectSocket(serverUrl) {
     updateMyStatusDot();
     window.electronAPI.setConfig({ sessionToken: token, avatarDataUrl: myAvatar || "" });
     socket.emit("get-user-profile", { username });
+    ensureMyKeyPair();
   });
 
   socket.on("auth-error", (msg) => {
@@ -874,15 +875,26 @@ function connectSocket(serverUrl) {
   });
 
   socket.on("dm-history", ({ withUsername, messages }) => { if (currentDmUser === withUsername) renderDmHistory(messages); });
-  socket.on("dm-message", (msg) => {
+  socket.on("dm-message", async (msg) => {
     if (currentDmUser && (msg.from === currentDmUser || msg.to === currentDmUser)) appendDmMessage(msg);
     if (msg.from !== username && msg.from !== currentDmUser) {
-      notify(`${msg.from} (mensagem direta)`, msg.text);
+      let preview = msg.text || "[anexo]";
+      if (msg.encrypted) { const plain = await decryptDm(msg.from, msg.text); preview = plain !== null ? plain : "🔒 Nova mensagem"; }
+      notify(`${msg.from} (mensagem direta)`, preview);
       unreadDms.add(msg.from);
       renderDmList(lastOnlineUsers);
     }
   });
   socket.on("dm-message-updated", (msg) => { if (currentDmUser === msg.from || currentDmUser === msg.to) updateDmMessage(msg); });
+  socket.on("public-key", async ({ username: peerUsername, publicKey }) => {
+    if (!publicKey) { peerPublicKeys.delete(peerUsername); sharedKeysByPeer.delete(peerUsername); if (currentDmUser === peerUsername) updateDmLockIndicator(false); return; }
+    try {
+      const key = await crypto.subtle.importKey("spki", base64ToBuf(publicKey), E2EE_ALG, true, []);
+      peerPublicKeys.set(peerUsername, key);
+      sharedKeysByPeer.delete(peerUsername); // a chave da outra pessoa pode ter mudado (ex: novo dispositivo) — força re-derivar
+      if (currentDmUser === peerUsername) updateDmLockIndicator(true);
+    } catch (_) {}
+  });
   socket.on("dm-message-deleted", ({ messageId }) => { const el = messagesEl.querySelector(`.msg[data-id="${messageId}"]`); if (el) el.remove(); });
 
   socket.on("screen-share-status", ({ active }) => { if (active) screenBanner.classList.remove("hidden"); });
@@ -1775,12 +1787,15 @@ pinnedBtn.addEventListener("click", () => {
 pinnedClose.addEventListener("click", () => pinnedOverlay.classList.add("hidden"));
 
 // ---------- Chat de texto ----------
-messageForm.addEventListener("submit", (e) => {
+messageForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = messageInput.value;
   if (!text.trim() && !pendingAttachment) return;
   if (currentDmUser) {
-    socket.emit("dm-message", { toUsername: currentDmUser, text });
+    const dmText = text.trim().slice(0, 2000); // mantém o texto cifrado dentro do limite que o servidor aceita sem cortar no meio
+    const ciphertext = await encryptDm(currentDmUser, dmText);
+    if (ciphertext) socket.emit("dm-message", { toUsername: currentDmUser, text: ciphertext, encrypted: true });
+    else socket.emit("dm-message", { toUsername: currentDmUser, text: dmText }); // outra pessoa ainda não tem chave configurada: manda sem cifrar
   } else {
     const slowMode = currentChannelSlowMode();
     if (slowMode > 0) {
@@ -2058,10 +2073,19 @@ function startEditMessage(div, msg, isDm) {
   const input = wrap.querySelector("input");
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
-  const commit = () => {
+  const commit = async () => {
     const val = input.value.trim();
-    if (val && val !== msg.text) socket.emit(isDm ? "edit-dm-message" : "edit-message", { messageId: msg.id, text: val });
-    else wrap.innerHTML = msg.text ? `<div class="msg-text">${renderMessageText(msg.text, msg.mentions_everyone)}</div>` : "";
+    if (val && val !== msg.text) {
+      if (isDm && msg.encrypted) {
+        const peer = msg.from === username ? msg.to : msg.from;
+        const ciphertext = await encryptDm(peer, val);
+        socket.emit("edit-dm-message", { messageId: msg.id, text: ciphertext || val, encrypted: !!ciphertext });
+      } else {
+        socket.emit(isDm ? "edit-dm-message" : "edit-message", { messageId: msg.id, text: val, encrypted: false });
+      }
+    } else {
+      wrap.innerHTML = msg.text ? `<div class="msg-text">${renderMessageText(msg.text, msg.mentions_everyone)}</div>` : "";
+    }
   };
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") wrap.innerHTML = msg.text ? `<div class="msg-text">${renderMessageText(msg.text, msg.mentions_everyone)}</div>` : ""; });
   input.addEventListener("blur", commit);
@@ -2073,12 +2097,13 @@ function updateMessageReactions(msg) {
   div.innerHTML = messageRowHtml(msg, false, grouped);
   wireMessageActions(div, msg, false);
 }
-function updateDmMessage(msg) {
+async function updateDmMessage(msg) {
   const div = messagesEl.querySelector(`.msg[data-id="${msg.id}"]`);
   if (!div) return;
   const grouped = div.classList.contains("grouped");
-  div.innerHTML = messageRowHtml(msg, true, grouped);
-  wireMessageActions(div, msg, true);
+  const displayMsg = await resolveDmMessageText(msg);
+  div.innerHTML = messageRowHtml(displayMsg, true, grouped);
+  wireMessageActions(div, displayMsg, true);
 }
 
 let activeReactionMessageId = null;
@@ -2195,6 +2220,82 @@ function renderMemberList(users) {
   renderGroup("Offline", offline, true);
 }
 
+// ---------- Criptografia ponta-a-ponta das DMs (ECDH P-256 + AES-GCM, via Web Crypto) ----------
+// A chave privada nunca sai deste dispositivo (fica só no config local do app).
+// Login num PC novo gera um par de chaves novo — conversas antigas ficam ilegíveis lá, é a troca
+// consciente que a gente topou pra ter E2EE de verdade sem montar um sistema de backup de chave.
+const E2EE_ALG = { name: "ECDH", namedCurve: "P-256" };
+let myKeyPair = null;
+const peerPublicKeys = new Map(); // username -> CryptoKey (pública, importada)
+const sharedKeysByPeer = new Map(); // username -> CryptoKey (AES-GCM derivada)
+
+function bufToBase64(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function base64ToBuf(b64) { return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer; }
+
+async function ensureMyKeyPair() {
+  if (myKeyPair) return myKeyPair;
+  const config = await window.electronAPI.getConfig();
+  if (config.e2eePrivateKey && config.e2eePublicKey) {
+    try {
+      const privateKey = await crypto.subtle.importKey("pkcs8", base64ToBuf(config.e2eePrivateKey), E2EE_ALG, true, ["deriveKey"]);
+      myKeyPair = { privateKey, publicKeyB64: config.e2eePublicKey };
+      socket.emit("update-public-key", { publicKey: config.e2eePublicKey });
+      return myKeyPair;
+    } catch (_) { /* chave local corrompida — gera uma nova abaixo */ }
+  }
+  const pair = await crypto.subtle.generateKey(E2EE_ALG, true, ["deriveKey"]);
+  const privateKeyB64 = bufToBase64(await crypto.subtle.exportKey("pkcs8", pair.privateKey));
+  const publicKeyB64 = bufToBase64(await crypto.subtle.exportKey("spki", pair.publicKey));
+  await window.electronAPI.setConfig({ e2eePrivateKey: privateKeyB64, e2eePublicKey: publicKeyB64 });
+  myKeyPair = { privateKey: pair.privateKey, publicKeyB64 };
+  socket.emit("update-public-key", { publicKey: publicKeyB64 });
+  return myKeyPair;
+}
+
+async function getSharedKeyWith(peerUsername) {
+  if (sharedKeysByPeer.has(peerUsername)) return sharedKeysByPeer.get(peerUsername);
+  const peerPublicKey = peerPublicKeys.get(peerUsername);
+  if (!peerPublicKey) return null;
+  const { privateKey } = await ensureMyKeyPair();
+  const sharedKey = await crypto.subtle.deriveKey(
+    { name: "ECDH", public: peerPublicKey }, privateKey, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
+  );
+  sharedKeysByPeer.set(peerUsername, sharedKey);
+  return sharedKey;
+}
+
+async function encryptDm(peerUsername, plaintext) {
+  try {
+    const key = await getSharedKeyWith(peerUsername);
+    if (!key) return null;
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plaintext));
+    return `${bufToBase64(iv)}:${bufToBase64(ciphertext)}`;
+  } catch (_) { return null; }
+}
+async function decryptDm(peerUsername, packed) {
+  try {
+    const [ivB64, ctB64] = String(packed).split(":");
+    const key = await getSharedKeyWith(peerUsername);
+    if (!key || !ivB64 || !ctB64) return null;
+    const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBuf(ivB64) }, key, base64ToBuf(ctB64));
+    return new TextDecoder().decode(plainBuf);
+  } catch (_) { return null; }
+}
+async function resolveDmMessageText(msg) {
+  if (!msg.encrypted) return msg;
+  const peer = msg.from === username ? msg.to : msg.from;
+  const plain = await decryptDm(peer, msg.text);
+  return plain !== null ? { ...msg, text: plain } : { ...msg, text: "🔒 Não foi possível decifrar esta mensagem neste dispositivo." };
+}
+function updateDmLockIndicator(locked) {
+  if (!currentDmUser) return;
+  currentChannelName.textContent = `@${currentDmUser} ${locked ? "🔒" : "🔓"}`;
+  currentChannelName.title = locked
+    ? "Mensagens protegidas por criptografia ponta-a-ponta"
+    : "Essa pessoa ainda não tem criptografia configurada neste dispositivo — mensagens novas não estão protegidas";
+}
+
 // ---------- Mensagens diretas ----------
 function renderDmList(users) {
   dmListEl.innerHTML = "";
@@ -2222,17 +2323,24 @@ function openDm(withUsername) {
   searchResultsEl.classList.add("hidden");
   messageInput.placeholder = `Mensagem para ${withUsername}...`;
   renderChannelLists();
+  updateDmLockIndicator(peerPublicKeys.has(withUsername));
   socket.emit("dm-open", { withUsername });
+  socket.emit("get-public-key", { username: withUsername });
+  ensureMyKeyPair();
 }
-function renderDmHistory(messages) { messagesEl.innerHTML = ""; lastMsgAuthor = null; lastMsgTime = 0; messages.forEach(appendDmMessage); }
-function appendDmMessage(msg) {
+function renderDmHistory(messages) {
+  messagesEl.innerHTML = ""; lastMsgAuthor = null; lastMsgTime = 0;
+  (async () => { for (const msg of messages) await appendDmMessage(msg); })();
+}
+async function appendDmMessage(msg) {
   const grouped = msg.from === lastMsgAuthor && (msg.timestamp - lastMsgTime) < GROUP_WINDOW_MS;
   lastMsgAuthor = msg.from; lastMsgTime = msg.timestamp;
+  const displayMsg = await resolveDmMessageText(msg);
   const div = document.createElement("div");
   div.className = "msg" + (grouped ? " grouped" : "");
   div.dataset.id = msg.id;
-  div.innerHTML = messageRowHtml(msg, true, grouped);
-  wireMessageActions(div, msg, true);
+  div.innerHTML = messageRowHtml(displayMsg, true, grouped);
+  wireMessageActions(div, displayMsg, true);
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
