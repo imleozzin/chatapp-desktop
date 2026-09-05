@@ -50,6 +50,8 @@ let myBanner = null;
 let myBio = "";
 let myStatus = "online";
 let notificationsEnabled = true;
+let notificationSound = null; // data URL do som customizado, ou null pra usar o som padrão do sistema
+let notificationSoundName = "";
 let myServers = [];
 let currentServerId = null;
 let currentChannel = null;
@@ -343,7 +345,8 @@ function readAndResizeImage(file, size) {
 function notify(title, body) {
   if (!notificationsEnabled) return;
   if (document.hasFocus()) return;
-  try { new Notification(title, { body, silent: false }); } catch (_) {}
+  try { new Notification(title, { body, silent: !!notificationSound }); } catch (_) {}
+  if (notificationSound) { try { new Audio(notificationSound).play().catch(() => {}); } catch (_) {} }
 }
 
 // ---------- Barra de título própria ----------
@@ -617,6 +620,8 @@ let pendingSessionToken = null;
 (async function init() {
   const config = await window.electronAPI.getConfig();
   notificationsEnabled = config.notificationsEnabled !== false;
+  notificationSound = config.notificationSound || null;
+  notificationSoundName = config.notificationSoundName || "";
   pendingSessionToken = config.sessionToken || null;
   loginError.textContent = "Conectando ao servidor... (pode demorar até 1 minuto se ele estiver \"dormindo\")";
   registerError.textContent = loginError.textContent;
@@ -1107,6 +1112,7 @@ settingsBtn.addEventListener("click", async () => {
   settingsServerInput.value = config.serverUrl;
   settingsStatusSelect.value = myStatus;
   settingsNotificationsCheckbox.checked = notificationsEnabled;
+  settingsSoundName.textContent = notificationSoundName || "Padrão do sistema";
   settingsUsernameDisplay.value = username;
   settingsEmailDisplay.value = "Carregando...";
   settingsNewEmailInput.value = "";
@@ -1140,6 +1146,37 @@ settingsStatusSelect.addEventListener("change", () => {
 settingsNotificationsCheckbox.addEventListener("change", async () => {
   notificationsEnabled = settingsNotificationsCheckbox.checked;
   await window.electronAPI.setConfig({ notificationsEnabled });
+});
+
+const settingsSoundChoose = document.getElementById("settings-sound-choose");
+const settingsSoundTest = document.getElementById("settings-sound-test");
+const settingsSoundReset = document.getElementById("settings-sound-reset");
+const settingsSoundName = document.getElementById("settings-sound-name");
+const settingsSoundInput = document.getElementById("settings-sound-input");
+
+settingsSoundChoose.addEventListener("click", () => settingsSoundInput.click());
+settingsSoundInput.addEventListener("change", () => {
+  const file = settingsSoundInput.files[0];
+  if (!file) return;
+  if (file.size > 1024 * 1024) { alert("Escolha um som menor que 1MB."); return; }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    notificationSound = reader.result;
+    notificationSoundName = file.name;
+    settingsSoundName.textContent = notificationSoundName;
+    await window.electronAPI.setConfig({ notificationSound, notificationSoundName });
+  };
+  reader.readAsDataURL(file);
+});
+settingsSoundTest.addEventListener("click", () => {
+  if (notificationSound) new Audio(notificationSound).play().catch(() => {});
+  else new Notification("QG", { body: "Assim vai soar uma notificação." });
+});
+settingsSoundReset.addEventListener("click", async () => {
+  notificationSound = null;
+  notificationSoundName = "";
+  settingsSoundName.textContent = "Padrão do sistema";
+  await window.electronAPI.setConfig({ notificationSound: "", notificationSoundName: "" });
 });
 
 settingsEmailSave.addEventListener("click", () => {

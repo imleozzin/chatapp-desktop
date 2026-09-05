@@ -333,6 +333,16 @@
             <input id="settings-notifications-checkbox" type="checkbox" />
             Mostrar notificações de novas mensagens
           </label>
+
+          <div class="modal-divider" style="margin:18px 0;">Som de notificação</div>
+          <p class="subtitle" style="text-align:left;">Escolha um som curto (mp3, wav ou ogg) pra tocar quando chegar uma notificação.</p>
+          <div class="modal-actions" style="justify-content:flex-start;">
+            <button id="settings-sound-choose" class="ghost-btn">Escolher som</button>
+            <button id="settings-sound-test" class="ghost-btn">Testar</button>
+            <button id="settings-sound-reset" class="ghost-btn">Usar padrão do sistema</button>
+          </div>
+          <p id="settings-sound-name" class="subtitle" style="text-align:left;">Padrão do sistema</p>
+          <input id="settings-sound-input" type="file" accept="audio/*" class="hidden" />
         </div>
 
         <div id="account-tab-advanced" class="server-settings-tab hidden">
