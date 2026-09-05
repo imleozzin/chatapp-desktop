@@ -671,8 +671,10 @@ function doRegister() {
 registerSubmitBtn.addEventListener("click", doRegister);
 registerPasswordInput.addEventListener("keydown", (e) => e.key === "Enter" && doRegister());
 
+let currentServerUrl = "";
 function connectSocket(serverUrl) {
   console.log("[cliente] tentando conectar em:", JSON.stringify(serverUrl));
+  currentServerUrl = serverUrl;
   socket = io(serverUrl, { reconnectionAttempts: 10, reconnectionDelay: 3000, timeout: 60000 });
 
   socket.on("connect", () => {
@@ -780,6 +782,7 @@ function connectSocket(serverUrl) {
     customEmojis = emojis || [];
     renderChannelLists();
     populateCategorySelect();
+    populateWebhookChannelSelect();
     if (!currentChannel && !currentDmUser) {
       const firstText = channels.find((c) => c.type === "text");
       if (firstText) joinChannel(firstText.id);
@@ -793,6 +796,7 @@ function connectSocket(serverUrl) {
     socket.emit("get-roles", { serverId });
   });
   socket.on("roles-list", ({ serverId, roles, memberRoles }) => { if (serverId === currentServerId) renderRolesSettings(roles, memberRoles); });
+  socket.on("webhooks-list", ({ serverId, webhooks }) => { if (serverId === currentServerId) renderWebhooksSettings(webhooks); });
 
   socket.on("chat-history", renderHistory);
   socket.on("chat-message", (msg) => {
@@ -1312,6 +1316,7 @@ function updateServerSettingsTabVisibility() {
   document.querySelector('.server-settings-nav-item[data-tab="overview"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.MANAGE_SERVER)));
   document.querySelector('.server-settings-nav-item[data-tab="invites"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.MANAGE_SERVER)));
   document.querySelector('.server-settings-nav-item[data-tab="roles"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.MANAGE_ROLES)));
+  document.querySelector('.server-settings-nav-item[data-tab="webhooks"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.MANAGE_WEBHOOKS)));
   document.querySelector('.server-settings-nav-item[data-tab="members"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.KICK_MEMBERS) || hasPerm(PERMS.BAN_MEMBERS) || hasPerm(PERMS.MANAGE_ROLES)));
   document.querySelector('.server-settings-nav-item[data-tab="bans"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.BAN_MEMBERS)));
   document.querySelector('.server-settings-nav-item[data-tab="delete"]').classList.toggle("hidden", !isOwner);
@@ -1335,6 +1340,8 @@ function openServerSettings() {
   socket.emit("get-server-members", { serverId: currentServerId });
   socket.emit("get-server-bans", { serverId: currentServerId });
   socket.emit("get-roles", { serverId: currentServerId });
+  socket.emit("get-webhooks", { serverId: currentServerId });
+  populateWebhookChannelSelect();
   serverSettingsOverlay.classList.remove("hidden");
 }
 document.getElementById("server-settings-close").addEventListener("click", () => serverSettingsOverlay.classList.add("hidden"));
@@ -1388,6 +1395,52 @@ function renderServerMembersSettings(members) {
       const uname = e.target.closest(".friend-row").dataset.username;
       if (confirm(`Banir ${uname} desse servidor? A pessoa não vai conseguir voltar nem com um convite novo, até você desbanir.`)) {
         socket.emit("ban-member", { serverId: currentServerId, targetUsername: uname });
+      }
+    });
+  });
+}
+
+// ---------- Webhooks ----------
+const serverWebhooksList = document.getElementById("server-webhooks-list");
+const createWebhookNameInput = document.getElementById("create-webhook-name-input");
+const createWebhookChannelSelect = document.getElementById("create-webhook-channel-select");
+const createWebhookBtn = document.getElementById("create-webhook-btn");
+
+function populateWebhookChannelSelect() {
+  createWebhookChannelSelect.innerHTML = channels.filter((c) => c.type === "text")
+    .map((c) => `<option value="${c.id}">#${escapeHtml(c.name)}</option>`).join("");
+}
+createWebhookBtn.addEventListener("click", () => {
+  const name = createWebhookNameInput.value.trim();
+  const channelId = createWebhookChannelSelect.value;
+  if (!name || !channelId) return;
+  socket.emit("create-webhook", { serverId: currentServerId, channelId, name });
+  createWebhookNameInput.value = "";
+});
+
+function renderWebhooksSettings(webhooks) {
+  serverWebhooksList.innerHTML = webhooks.length
+    ? webhooks.map((w) => {
+        const ch = channels.find((c) => c.id === w.channel_id);
+        const url = `${currentServerUrl}/webhooks/${w.id}/${w.token}`;
+        return `
+        <div class="friend-row webhook-row" data-webhook-id="${escapeHtml(w.id)}">
+          ${avatarHtml(w.name, w.avatar, 32)}
+          <span class="friend-name">${escapeHtml(w.name)} <small style="color:var(--text-muted)">#${escapeHtml(ch ? ch.name : "?")}</small>
+            <input type="text" class="modal-input webhook-url-input" readonly value="${escapeHtml(url)}" />
+          </span>
+          <button class="ghost-btn danger settings-delete-webhook-btn">Apagar</button>
+        </div>`;
+      }).join("")
+    : `<div class="friend-row" style="opacity:0.6;">Nenhum webhook criado ainda.</div>`;
+  serverWebhooksList.querySelectorAll(".webhook-url-input").forEach((input) => {
+    input.addEventListener("click", () => input.select());
+  });
+  serverWebhooksList.querySelectorAll(".settings-delete-webhook-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const webhookId = e.target.closest(".webhook-row").dataset.webhookId;
+      if (confirm("Apagar esse webhook? A URL para de funcionar imediatamente.")) {
+        socket.emit("delete-webhook", { serverId: currentServerId, webhookId });
       }
     });
   });
@@ -1764,9 +1817,11 @@ function messageRowHtml(msg, isDm, grouped) {
     ? `<div class="msg-gutter"><span class="msg-hover-time">${time}</span></div>`
     : `<div class="msg-gutter">${avatarHtml(author, displayAvatar, 40)}</div>`;
 
+  const webhookTag = msg.is_webhook ? `<span class="webhook-tag">WEBHOOK</span>` : "";
   const headerHtml = grouped ? "" : `
       <div class="msg-meta">
         <span class="msg-author" style="color:${color}">${escapeHtml(displayName)}</span>
+        ${webhookTag}
         <span class="msg-time">${time}</span>
         ${editedTag}${pinnedTag}
       </div>`;

@@ -498,6 +498,7 @@
         <button class="server-settings-nav-item" data-tab="members">Membros</button>
         <button class="server-settings-nav-item" data-tab="invites">Convites</button>
         <button class="server-settings-nav-item" data-tab="roles">Cargos</button>
+        <button class="server-settings-nav-item" data-tab="webhooks">Webhooks</button>
         <button class="server-settings-nav-item" data-tab="bans">Banidos</button>
         <div class="server-settings-nav-divider"></div>
         <button class="server-settings-nav-item danger" data-tab="delete">Excluir servidor</button>
@@ -529,6 +530,18 @@
           <p class="subtitle" style="text-align:left;">Cargos dão permissões combináveis — cada pessoa pode ter vários. "everyone" é a base que toda pessoa do servidor tem.</p>
           <div id="server-roles-list" class="friends-list"></div>
           <button id="create-role-btn" class="ghost-btn" style="margin-top:10px;">Criar cargo</button>
+        </div>
+
+        <div id="settings-tab-webhooks" class="server-settings-tab hidden">
+          <h2>Webhooks</h2>
+          <p class="subtitle" style="text-align:left;">Um webhook deixa uma ferramenta externa postar mensagens direto num canal, sem precisar de uma conta.</p>
+          <div id="server-webhooks-list" class="friends-list"></div>
+          <div class="modal-divider" style="margin:16px 0;">Criar webhook</div>
+          <label class="field-label">Nome</label>
+          <input id="create-webhook-name-input" type="text" class="modal-input" maxlength="32" placeholder="ex: Avisos do site" />
+          <label class="field-label">Canal</label>
+          <select id="create-webhook-channel-select" class="modal-input"></select>
+          <button id="create-webhook-btn" class="ghost-btn">Criar webhook</button>
         </div>
 
         <div id="settings-tab-bans" class="server-settings-tab hidden">
