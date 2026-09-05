@@ -40,6 +40,12 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
+
+  // Restaura o atalho de abrir o DevTools (se perde ao remover o menu nativo)
+  win.webContents.on("before-input-event", (event, input) => {
+    const isDevToolsShortcut = input.key === "F12" || (input.control && input.shift && input.key.toUpperCase() === "I");
+    if (isDevToolsShortcut) win.webContents.toggleDevTools();
+  });
   mainWindow = win;
 
   win.on("maximize", () => win.webContents.send("window-maximized", true));
