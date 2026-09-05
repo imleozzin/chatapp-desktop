@@ -2242,7 +2242,7 @@ attachBtn.addEventListener("click", () => fileInput.click());
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files[0];
   if (!file) return;
-  if (file.size > 3 * 1024 * 1024) { alert("Arquivo muito grande (máx. 3MB por enquanto)."); fileInput.value = ""; return; }
+  if (file.size > 20 * 1024 * 1024) { alert("Arquivo muito grande (máx. 20MB)."); fileInput.value = ""; return; }
   const reader = new FileReader();
   reader.onload = () => { pendingAttachment = { name: file.name, type: file.type, dataUrl: reader.result }; attachmentName.textContent = file.name; attachmentPreview.classList.remove("hidden"); };
   reader.readAsDataURL(file);
