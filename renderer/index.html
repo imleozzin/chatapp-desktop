@@ -437,6 +437,35 @@
     </div>
   </div>
 
+  <!-- Modal: criar/editar cargo -->
+  <div id="role-editor-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2 id="role-editor-title">Criar cargo</h2>
+      <label class="field-label">Nome do cargo</label>
+      <input id="role-editor-name-input" type="text" class="modal-input" maxlength="32" />
+      <label class="field-label">Cor</label>
+      <input id="role-editor-color-input" type="color" class="modal-input" value="#99aab5" style="height:40px; padding:4px;" />
+      <label class="field-label">Permissões</label>
+      <div id="role-editor-permissions" class="role-permissions-list"></div>
+      <div class="modal-actions">
+        <button id="role-editor-delete" class="danger-btn hidden">Apagar cargo</button>
+        <button id="role-editor-cancel" class="ghost-btn">Cancelar</button>
+        <button id="role-editor-save" class="primary-btn">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: cargos de um membro específico -->
+  <div id="member-roles-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2 id="member-roles-title">Cargos</h2>
+      <div id="member-roles-list" class="role-permissions-list"></div>
+      <div class="modal-actions">
+        <button id="member-roles-close" class="primary-btn">Fechar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: mostrar código de convite -->
   <div id="invite-overlay" class="picker-overlay hidden">
     <div class="picker-modal">
@@ -465,9 +494,10 @@
     <div class="picker-modal server-settings-modal">
       <div class="server-settings-nav">
         <div class="server-settings-nav-title" id="server-settings-title">Servidor</div>
-        <button class="server-settings-nav-item active" data-tab="overview">Visão geral</button>
+        <button class="server-settings-nav-item" data-tab="overview">Visão geral</button>
         <button class="server-settings-nav-item" data-tab="members">Membros</button>
         <button class="server-settings-nav-item" data-tab="invites">Convites</button>
+        <button class="server-settings-nav-item" data-tab="roles">Cargos</button>
         <button class="server-settings-nav-item" data-tab="bans">Banidos</button>
         <div class="server-settings-nav-divider"></div>
         <button class="server-settings-nav-item danger" data-tab="delete">Excluir servidor</button>
@@ -492,6 +522,13 @@
           <p class="subtitle" style="text-align:left;">Compartilhe esse código para convidar pessoas.</p>
           <input id="server-invite-code-display" type="text" class="modal-input" readonly />
           <button id="server-invite-regenerate" class="ghost-btn">Gerar novo código</button>
+        </div>
+
+        <div id="settings-tab-roles" class="server-settings-tab hidden">
+          <h2>Cargos</h2>
+          <p class="subtitle" style="text-align:left;">Cargos dão permissões combináveis — cada pessoa pode ter vários. "everyone" é a base que toda pessoa do servidor tem.</p>
+          <div id="server-roles-list" class="friends-list"></div>
+          <button id="create-role-btn" class="ghost-btn" style="margin-top:10px;">Criar cargo</button>
         </div>
 
         <div id="settings-tab-bans" class="server-settings-tab hidden">

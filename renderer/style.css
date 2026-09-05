@@ -283,7 +283,7 @@ input, button, select { font-family: var(--font); }
 .custom-emoji { width: 22px; height: 22px; vertical-align: -6px; object-fit: contain; }
 
 .mention { background: rgba(139, 110, 242, 0.28); color: #d6c9ff; border-radius: 4px; padding: 0 3px; font-weight: 600; }
-.mention-me { background: rgba(240, 168, 64, 0.32); color: #ffd699; }
+.mention-me, .mention-everyone { background: rgba(240, 168, 64, 0.32); color: #ffd699; }
 
 .typing-indicator { padding: 2px 20px 8px; font-size: 12.5px; color: var(--text-muted); font-style: italic; }
 
@@ -336,6 +336,9 @@ input, button, select { font-family: var(--font); }
 .modal-divider { text-align: center; color: var(--text-muted); font-size: 12px; margin: 16px 0; text-transform: uppercase; }
 .checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text); margin: 4px 0 18px; cursor: pointer; }
 .checkbox-label input { width: 16px; height: 16px; cursor: pointer; }
+.role-permissions-list { max-height: 320px; overflow-y: auto; margin-bottom: 12px; }
+.role-permissions-list .checkbox-label { margin: 0 0 10px; }
+.role-color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
 
 .pinned-list { max-height: 320px; overflow-y: auto; margin-bottom: 12px; }
 .pinned-item { padding: 10px; border-radius: 8px; background: var(--bg-input); margin-bottom: 8px; font-size: 13.5px; color: var(--text); }

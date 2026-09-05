@@ -58,6 +58,32 @@ let categories = [];
 const collapsedCategories = new Set();
 let customEmojis = [];
 let myRole = "member";
+const PERMS = {
+  MANAGE_CHANNELS: 1 << 0,
+  MANAGE_ROLES: 1 << 1,
+  KICK_MEMBERS: 1 << 2,
+  BAN_MEMBERS: 1 << 3,
+  MANAGE_MESSAGES: 1 << 4,
+  MANAGE_EMOJIS: 1 << 5,
+  MANAGE_SERVER: 1 << 6,
+  MENTION_EVERYONE: 1 << 7,
+  MANAGE_WEBHOOKS: 1 << 8,
+  ADMINISTRATOR: 1 << 9,
+};
+const PERM_LABELS_PT = {
+  MANAGE_CHANNELS: "Gerenciar canais",
+  MANAGE_ROLES: "Gerenciar cargos",
+  KICK_MEMBERS: "Remover membros",
+  BAN_MEMBERS: "Banir membros",
+  MANAGE_MESSAGES: "Gerenciar mensagens (apagar/fixar de outras pessoas)",
+  MANAGE_EMOJIS: "Gerenciar emojis",
+  MANAGE_SERVER: "Gerenciar servidor (nome, ícone, convites)",
+  MENTION_EVERYONE: "Mencionar @everyone e @here",
+  MANAGE_WEBHOOKS: "Gerenciar webhooks",
+  ADMINISTRATOR: "Administrador (todas as permissões)",
+};
+let myPermissions = 0;
+function hasPerm(bit) { return (myPermissions & PERMS.ADMINISTRATOR) !== 0 || (myPermissions & bit) !== 0; }
 let pendingAttachment = null;
 let replyTarget = null; // {id, username, text}
 let typingTimeout = null;
@@ -226,7 +252,7 @@ let slowmodeInterval = null;
 
 function currentChannelSlowMode() {
   if (currentDmUser || !currentChannel) return 0;
-  if (myRole === "owner" || myRole === "moderator") return 0;
+  if (hasPerm(PERMS.MANAGE_MESSAGES)) return 0;
   const ch = channels.find((c) => c.id === currentChannel);
   return ch?.slow_mode_seconds || 0;
 }
@@ -267,7 +293,7 @@ function avatarHtml(username_, avatar, size) {
 function avatarWithStatusHtml(username_, avatar, size, status) {
   return `<div class="avatar-with-status" style="width:${size}px;height:${size}px">${avatarHtml(username_, avatar, size)}<span class="status-dot status-${status || "online"}"></span></div>`;
 }
-function renderMessageText(text) {
+function renderMessageText(text, mentionsEveryone) {
   let escaped = escapeHtml(text);
   escaped = escaped.replace(/```([\s\S]+?)```/g, (m, code) => `<pre class="msg-code-block">${code}</pre>`);
   escaped = escaped.replace(/`([^`]+)`/g, (m, code) => `<code class="msg-inline-code">${code}</code>`);
@@ -279,7 +305,8 @@ function renderMessageText(text) {
   });
   escaped = escaped.replace(/(^|\s)@(\w+)/g, (match, pre, name) => {
     const isMe = name.toLowerCase() === username.toLowerCase();
-    return `${pre}<span class="mention${isMe ? " mention-me" : ""}">@${name}</span>`;
+    const isEveryone = mentionsEveryone && /^(everyone|here)$/i.test(name);
+    return `${pre}<span class="mention${isMe ? " mention-me" : ""}${isEveryone ? " mention-everyone" : ""}">@${name}</span>`;
   });
   return escaped;
 }
@@ -759,6 +786,13 @@ function connectSocket(serverUrl) {
     }
   });
   socket.on("my-role", ({ serverId, role }) => { if (serverId === currentServerId) { myRole = role; updateRoleUI(); } });
+  socket.on("my-permissions", ({ serverId, permissions }) => {
+    if (serverId !== currentServerId) return;
+    myPermissions = permissions;
+    updateRoleUI();
+    socket.emit("get-roles", { serverId });
+  });
+  socket.on("roles-list", ({ serverId, roles, memberRoles }) => { if (serverId === currentServerId) renderRolesSettings(roles, memberRoles); });
 
   socket.on("chat-history", renderHistory);
   socket.on("chat-message", (msg) => {
@@ -766,7 +800,7 @@ function connectSocket(serverUrl) {
     clearTyping(msg.username);
     if (msg.username !== username) {
       const inThisChannel = msg.channel_id === currentChannel && !currentDmUser;
-      if (textMentionsMe(msg.text)) notify(`${msg.username} mencionou você`, msg.text);
+      if (textMentionsMe(msg.text) || msg.mentions_everyone) notify(`${msg.username} mencionou você`, msg.text);
       else if (!inThisChannel) notify(msg.username, msg.text || "[anexo]");
       if (!inThisChannel) { unreadChannels.add(msg.channel_id); renderChannelLists(); }
     }
@@ -954,7 +988,9 @@ function updateAutocomplete() {
 
   if (mentionMatch) {
     const q = mentionMatch[1].toLowerCase();
-    autocompleteMatches = lastMemberList.map((u) => u.username).filter((n) => n.toLowerCase().startsWith(q)).slice(0, 6);
+    const names = lastMemberList.map((u) => u.username);
+    if (!currentDmUser && hasPerm(PERMS.MENTION_EVERYONE)) names.unshift("everyone", "here");
+    autocompleteMatches = names.filter((n) => n.toLowerCase().startsWith(q)).slice(0, 6);
     autocompleteType = "mention";
   } else if (emojiMatch) {
     const q = emojiMatch[1].toLowerCase();
@@ -1125,6 +1161,7 @@ function selectServer(serverId) {
   currentDmUser = null;
   channels = [];
   categories = [];
+  myPermissions = 0;
   const srv = myServers.find((s) => s.id === serverId);
   currentServerNameEl.textContent = srv ? srv.name : "QG";
   messagesEl.innerHTML = "";
@@ -1248,14 +1285,18 @@ document.getElementById("menu-leave-server").addEventListener("click", () => {
   serverDropdown.classList.add("hidden");
 });
 
+function hasAnyServerAdminPerm() {
+  return hasPerm(PERMS.MANAGE_CHANNELS) || hasPerm(PERMS.MANAGE_ROLES) || hasPerm(PERMS.KICK_MEMBERS) ||
+    hasPerm(PERMS.BAN_MEMBERS) || hasPerm(PERMS.MANAGE_SERVER) || hasPerm(PERMS.MANAGE_EMOJIS) || hasPerm(PERMS.MANAGE_WEBHOOKS);
+}
 function updateServerMenuVisibility() {
   const isOwner = myRole === "owner";
-  document.getElementById("menu-invite").classList.toggle("hidden", !isOwner);
-  document.getElementById("menu-create-channel").classList.toggle("hidden", !isOwner);
-  document.getElementById("menu-create-category").classList.toggle("hidden", !isOwner);
-  document.getElementById("menu-change-icon").classList.toggle("hidden", !isOwner);
+  document.getElementById("menu-invite").classList.toggle("hidden", !hasPerm(PERMS.MANAGE_SERVER));
+  document.getElementById("menu-create-channel").classList.toggle("hidden", !hasPerm(PERMS.MANAGE_CHANNELS));
+  document.getElementById("menu-create-category").classList.toggle("hidden", !hasPerm(PERMS.MANAGE_CHANNELS));
+  document.getElementById("menu-change-icon").classList.toggle("hidden", !hasPerm(PERMS.MANAGE_SERVER));
   document.getElementById("menu-leave-server").classList.toggle("hidden", isOwner || currentServerId === "default-server");
-  document.getElementById("menu-server-settings").classList.toggle("hidden", !isOwner);
+  document.getElementById("menu-server-settings").classList.toggle("hidden", !(isOwner || hasAnyServerAdminPerm()));
 }
 
 // ---------- Página de Configurações do Servidor ----------
@@ -1266,17 +1307,34 @@ const serverMembersSettingsList = document.getElementById("server-members-settin
 const serverBansSettingsList = document.getElementById("server-bans-settings-list");
 const serverInviteCodeDisplay = document.getElementById("server-invite-code-display");
 
+function updateServerSettingsTabVisibility() {
+  const isOwner = myRole === "owner";
+  document.querySelector('.server-settings-nav-item[data-tab="overview"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.MANAGE_SERVER)));
+  document.querySelector('.server-settings-nav-item[data-tab="invites"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.MANAGE_SERVER)));
+  document.querySelector('.server-settings-nav-item[data-tab="roles"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.MANAGE_ROLES)));
+  document.querySelector('.server-settings-nav-item[data-tab="members"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.KICK_MEMBERS) || hasPerm(PERMS.BAN_MEMBERS) || hasPerm(PERMS.MANAGE_ROLES)));
+  document.querySelector('.server-settings-nav-item[data-tab="bans"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.BAN_MEMBERS)));
+  document.querySelector('.server-settings-nav-item[data-tab="delete"]').classList.toggle("hidden", !isOwner);
+}
+function firstVisibleServerSettingsTab() {
+  return [...document.querySelectorAll(".server-settings-nav-item[data-tab]")].find((t) => !t.classList.contains("hidden"));
+}
 function openServerSettings() {
   const srv = myServers.find((s) => s.id === currentServerId);
   serverSettingsTitle.textContent = srv ? srv.name : "Servidor";
   serverRenameInput.value = srv ? srv.name : "";
   serverInviteCodeDisplay.value = srv?.inviteCode || "";
+  updateServerSettingsTabVisibility();
   document.querySelectorAll(".server-settings-nav-item").forEach((t) => t.classList.remove("active"));
-  document.querySelector('.server-settings-nav-item[data-tab="overview"]').classList.add("active");
   document.querySelectorAll(".server-settings-tab").forEach((t) => t.classList.add("hidden"));
-  document.getElementById("settings-tab-overview").classList.remove("hidden");
+  const firstTab = firstVisibleServerSettingsTab();
+  if (firstTab) {
+    firstTab.classList.add("active");
+    document.getElementById(`settings-tab-${firstTab.dataset.tab}`).classList.remove("hidden");
+  }
   socket.emit("get-server-members", { serverId: currentServerId });
   socket.emit("get-server-bans", { serverId: currentServerId });
+  socket.emit("get-roles", { serverId: currentServerId });
   serverSettingsOverlay.classList.remove("hidden");
 }
 document.getElementById("server-settings-close").addEventListener("click", () => serverSettingsOverlay.classList.add("hidden"));
@@ -1309,9 +1367,16 @@ function renderServerMembersSettings(members) {
   serverMembersSettingsList.innerHTML = members.map((m) => `
     <div class="friend-row" data-username="${escapeHtml(m.username)}">
       ${avatarHtml(m.username, m.avatar, 32)}
-      <span class="friend-name">${escapeHtml(m.nickname || m.username)}${m.nickname ? ` <small style="color:var(--text-muted)">(@${escapeHtml(m.username)})</small>` : ""} <small style="color:var(--text-muted)">${m.role === "owner" ? "Dono" : m.role === "moderator" ? "Moderador" : "Membro"}</small></span>
-      ${m.role !== "owner" ? `<button class="ghost-btn settings-kick-btn">Remover</button><button class="ghost-btn danger settings-ban-btn">Banir</button>` : ""}
+      <span class="friend-name">${escapeHtml(m.nickname || m.username)}${m.nickname ? ` <small style="color:var(--text-muted)">(@${escapeHtml(m.username)})</small>` : ""} <small style="color:var(--text-muted)">${m.role === "owner" ? "Dono" : "Membro"}</small></span>
+      ${m.role !== "owner" ? `
+        ${hasPerm(PERMS.MANAGE_ROLES) ? '<button class="ghost-btn settings-roles-btn">Cargos</button>' : ""}
+        ${hasPerm(PERMS.KICK_MEMBERS) ? '<button class="ghost-btn settings-kick-btn">Remover</button>' : ""}
+        ${hasPerm(PERMS.BAN_MEMBERS) ? '<button class="ghost-btn danger settings-ban-btn">Banir</button>' : ""}
+      ` : ""}
     </div>`).join("");
+  serverMembersSettingsList.querySelectorAll(".settings-roles-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => openMemberRolesModal(e.target.closest(".friend-row").dataset.username));
+  });
   serverMembersSettingsList.querySelectorAll(".settings-kick-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       const uname = e.target.closest(".friend-row").dataset.username;
@@ -1345,6 +1410,105 @@ function renderServerBansSettings(bans) {
   });
 }
 
+// ---------- Cargos com permissões granulares ----------
+let lastRoles = [];
+let lastMemberRoles = []; // [{ username, role_id }]
+const serverRolesList = document.getElementById("server-roles-list");
+const createRoleBtn = document.getElementById("create-role-btn");
+const roleEditorOverlay = document.getElementById("role-editor-overlay");
+const roleEditorTitle = document.getElementById("role-editor-title");
+const roleEditorNameInput = document.getElementById("role-editor-name-input");
+const roleEditorColorInput = document.getElementById("role-editor-color-input");
+const roleEditorPermissions = document.getElementById("role-editor-permissions");
+const roleEditorDelete = document.getElementById("role-editor-delete");
+const roleEditorCancel = document.getElementById("role-editor-cancel");
+const roleEditorSave = document.getElementById("role-editor-save");
+let editingRoleId = null;
+
+function renderRolesSettings(roles, memberRoles) {
+  lastRoles = roles || [];
+  lastMemberRoles = memberRoles || [];
+  const canManage = hasPerm(PERMS.MANAGE_ROLES);
+  serverRolesList.innerHTML = lastRoles.map((r) => `
+    <div class="friend-row" data-role-id="${escapeHtml(r.id)}">
+      <span class="role-color-dot" style="background:${r.color || "var(--text-muted)"}"></span>
+      <span class="friend-name">${escapeHtml(r.is_default ? "everyone" : r.name)}</span>
+      ${canManage ? `<button class="ghost-btn settings-edit-role-btn">Editar</button>` : ""}
+    </div>`).join("");
+  createRoleBtn.classList.toggle("hidden", !canManage);
+  serverRolesList.querySelectorAll(".settings-edit-role-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const roleId = e.target.closest(".friend-row").dataset.roleId;
+      openRoleEditor(lastRoles.find((r) => r.id === roleId));
+    });
+  });
+}
+
+function permissionCheckboxesHtml(checkedMask) {
+  return Object.keys(PERMS).map((key) => `
+    <label class="checkbox-label">
+      <input type="checkbox" data-perm="${key}" ${(checkedMask & PERMS[key]) ? "checked" : ""} />
+      ${escapeHtml(PERM_LABELS_PT[key])}
+    </label>`).join("");
+}
+
+function openRoleEditor(role) {
+  editingRoleId = role ? role.id : null;
+  roleEditorTitle.textContent = role ? `Editar cargo` : "Criar cargo";
+  roleEditorNameInput.value = role && !role.is_default ? role.name : (role ? "everyone" : "");
+  roleEditorNameInput.disabled = !!(role && role.is_default);
+  roleEditorColorInput.value = (role && role.color) || "#99aab5";
+  roleEditorPermissions.innerHTML = permissionCheckboxesHtml(role ? role.permissions : 0);
+  roleEditorDelete.classList.toggle("hidden", !role || role.is_default);
+  roleEditorOverlay.classList.remove("hidden");
+}
+createRoleBtn.addEventListener("click", () => openRoleEditor(null));
+roleEditorCancel.addEventListener("click", () => roleEditorOverlay.classList.add("hidden"));
+roleEditorSave.addEventListener("click", () => {
+  const name = roleEditorNameInput.value.trim();
+  if (!editingRoleId && !name) return;
+  let permissions = 0;
+  roleEditorPermissions.querySelectorAll("input[data-perm]:checked").forEach((cb) => { permissions |= PERMS[cb.dataset.perm]; });
+  const color = roleEditorColorInput.value;
+  if (editingRoleId) socket.emit("update-role", { serverId: currentServerId, roleId: editingRoleId, name, color, permissions });
+  else socket.emit("create-role", { serverId: currentServerId, name, color, permissions });
+  roleEditorOverlay.classList.add("hidden");
+});
+roleEditorDelete.addEventListener("click", () => {
+  if (!editingRoleId) return;
+  if (confirm("Apagar esse cargo? Quem tinha ele perde as permissões associadas.")) {
+    socket.emit("delete-role", { serverId: currentServerId, roleId: editingRoleId });
+    roleEditorOverlay.classList.add("hidden");
+  }
+});
+
+// ---------- Cargos de um membro específico ----------
+const memberRolesOverlay = document.getElementById("member-roles-overlay");
+const memberRolesTitle = document.getElementById("member-roles-title");
+const memberRolesListEl = document.getElementById("member-roles-list");
+const memberRolesClose = document.getElementById("member-roles-close");
+
+function openMemberRolesModal(targetUsername) {
+  memberRolesTitle.textContent = `Cargos de ${targetUsername}`;
+  const assignedIds = new Set(lastMemberRoles.filter((mr) => mr.username === targetUsername).map((mr) => mr.role_id));
+  const assignable = lastRoles.filter((r) => !r.is_default);
+  memberRolesListEl.innerHTML = assignable.length
+    ? assignable.map((r) => `
+      <label class="checkbox-label">
+        <input type="checkbox" data-role-id="${escapeHtml(r.id)}" ${assignedIds.has(r.id) ? "checked" : ""} />
+        <span class="role-color-dot" style="background:${r.color || "var(--text-muted)"}"></span>
+        ${escapeHtml(r.name)}
+      </label>`).join("")
+    : `<div style="opacity:0.6;">Nenhum cargo criado ainda. Crie um na aba "Cargos" das configurações do servidor.</div>`;
+  memberRolesListEl.querySelectorAll("input[data-role-id]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      socket.emit("assign-role", { serverId: currentServerId, targetUsername, roleId: cb.dataset.roleId, assign: cb.checked });
+    });
+  });
+  memberRolesOverlay.classList.remove("hidden");
+}
+memberRolesClose.addEventListener("click", () => memberRolesOverlay.classList.add("hidden"));
+
 // ---------- Categorias ----------
 function populateCategorySelect() {
   createChannelCategorySelect.innerHTML = `<option value="">Sem categoria</option>` +
@@ -1353,18 +1517,18 @@ function populateCategorySelect() {
 
 // ---------- Canais: listar, criar, apagar ----------
 function updateRoleUI() {
-  const isOwner = myRole === "owner";
-  addTextChannelBtn.classList.toggle("hidden", !isOwner);
-  addVoiceChannelBtn.classList.toggle("hidden", !isOwner);
+  const canManageChannels = hasPerm(PERMS.MANAGE_CHANNELS);
+  addTextChannelBtn.classList.toggle("hidden", !canManageChannels);
+  addVoiceChannelBtn.classList.toggle("hidden", !canManageChannels);
   updateServerMenuVisibility();
   renderChannelLists();
   renderMemberList(lastMemberList);
 }
 
 function renderChannelLists() {
-  const isOwner = myRole === "owner";
-  const deleteBtnHtml = isOwner ? `<span class="channel-delete" data-tooltip="Apagar canal">${ICONS.x}</span>` : "";
-  const slowModeBtnHtml = isOwner ? `<span class="channel-slowmode" data-tooltip="Modo lento">${ICONS.clock}</span>` : "";
+  const canManageChannels = hasPerm(PERMS.MANAGE_CHANNELS);
+  const deleteBtnHtml = canManageChannels ? `<span class="channel-delete" data-tooltip="Apagar canal">${ICONS.x}</span>` : "";
+  const slowModeBtnHtml = canManageChannels ? `<span class="channel-slowmode" data-tooltip="Modo lento">${ICONS.clock}</span>` : "";
 
   textChannelsEl.innerHTML = "";
   voiceChannelsEl.innerHTML = "";
@@ -1566,16 +1730,16 @@ function linkEmbedHtml(embed) {
 }
 
 function resolveDisplay(rawUsername, rawAvatar, isDm) {
-  if (isDm) return { name: rawUsername, avatar: rawAvatar };
+  if (isDm) return { name: rawUsername, avatar: rawAvatar, color: null };
   const member = lastMemberList.find((m) => m.username === rawUsername);
-  return { name: (member && member.nickname) || rawUsername, avatar: (member && member.avatar) || rawAvatar };
+  return { name: (member && member.nickname) || rawUsername, avatar: (member && member.avatar) || rawAvatar, color: member?.roleColor || null };
 }
 
 function messageRowHtml(msg, isDm, grouped) {
   const author = isDm ? msg.from : msg.username;
-  const { name: displayName, avatar: displayAvatar } = resolveDisplay(author, msg.avatar, isDm);
+  const { name: displayName, avatar: displayAvatar, color: roleColor } = resolveDisplay(author, msg.avatar, isDm);
   const isMine = author === username;
-  const canModerate = !isDm && (myRole === "owner" || myRole === "moderator");
+  const canModerate = !isDm && hasPerm(PERMS.MANAGE_MESSAGES);
   let attachmentHtml = "";
   if (msg.attachment) {
     attachmentHtml = msg.attachment.type.startsWith("image/")
@@ -1586,7 +1750,7 @@ function messageRowHtml(msg, isDm, grouped) {
     ? `<div class="msg-reactions">${Object.entries(msg.reactions).map(([emoji, users]) => `<button class="reaction-pill${users.includes(username) ? " mine" : ""}" data-emoji="${emoji}">${emoji} ${users.length}</button>`).join("")}</div>`
     : `<div class="msg-reactions"></div>`;
   const time = new Date(msg.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  const color = colorForUsername(author);
+  const color = roleColor || colorForUsername(author);
   const editedTag = msg.edited ? `<span class="msg-edited">(editado)</span>` : "";
   const pinnedTag = msg.pinned ? `<span class="msg-pinned-tag">📌</span>` : "";
   let actions = "";
@@ -1618,7 +1782,7 @@ function messageRowHtml(msg, isDm, grouped) {
       ${headerHtml}
       ${hoverActionsHtml}
       ${replyQuoteHtml}
-      <div class="msg-text-wrap">${msg.text ? `<div class="msg-text">${renderMessageText(msg.text)}</div>` : ""}</div>
+      <div class="msg-text-wrap">${msg.text ? `<div class="msg-text">${renderMessageText(msg.text, msg.mentions_everyone)}</div>` : ""}</div>
       <div class="msg-embed-wrap">${linkEmbedHtml(msg.embed)}</div>
       ${attachmentHtml}
       ${reactionsHtml}
@@ -1682,9 +1846,9 @@ function startEditMessage(div, msg, isDm) {
   const commit = () => {
     const val = input.value.trim();
     if (val && val !== msg.text) socket.emit(isDm ? "edit-dm-message" : "edit-message", { messageId: msg.id, text: val });
-    else wrap.innerHTML = msg.text ? `<div class="msg-text">${renderMessageText(msg.text)}</div>` : "";
+    else wrap.innerHTML = msg.text ? `<div class="msg-text">${renderMessageText(msg.text, msg.mentions_everyone)}</div>` : "";
   };
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") wrap.innerHTML = msg.text ? `<div class="msg-text">${renderMessageText(msg.text)}</div>` : ""; });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") wrap.innerHTML = msg.text ? `<div class="msg-text">${renderMessageText(msg.text, msg.mentions_everyone)}</div>` : ""; });
   input.addEventListener("blur", commit);
 }
 function updateMessageReactions(msg) {
@@ -1740,7 +1904,7 @@ emojiBtn.addEventListener("click", (e) => {
   if (customEmojis.length) {
     html += customEmojis.map((em) => `<span class="emoji-option custom-emoji-option" data-name="${em.name}"><img class="custom-emoji" src="${em.image}" />${em.animated ? '<span class="emoji-gif-badge">GIF</span>' : ""}</span>`).join("");
   }
-  if (myRole === "owner") html += `<span class="emoji-option add-custom-emoji-btn" data-tooltip="Adicionar emoji personalizado">➕</span>`;
+  if (hasPerm(PERMS.MANAGE_EMOJIS)) html += `<span class="emoji-option add-custom-emoji-btn" data-tooltip="Adicionar emoji personalizado">➕</span>`;
   emojiPicker.innerHTML = html;
   emojiPicker.style.left = (rect.left - 220) + "px";
   emojiPicker.style.top = (rect.top - 220) + "px";
@@ -1788,8 +1952,7 @@ function renderMemberList(users) {
   const offline = lastMemberList.filter((u) => u.status === "offline");
 
   const owners = online.filter((u) => u.role === "owner");
-  const moderators = online.filter((u) => u.role === "moderator");
-  const members = online.filter((u) => !u.role || u.role === "member");
+  const members = online.filter((u) => u.role !== "owner");
 
   const renderGroup = (label, list, dimmed) => {
     if (!list.length) return;
@@ -1800,22 +1963,19 @@ function renderMemberList(users) {
     list.forEach((u) => {
       const li = document.createElement("li");
       if (dimmed) li.className = "member-offline";
-      const roleBadge = myRole === "owner" && u.username !== username
-        ? `<button class="role-toggle-btn" data-tooltip="Tornar moderador ou membro">${ICONS.shield}</button>` : "";
-      li.innerHTML = `${avatarWithStatusHtml(u.username, u.avatar, 26, u.status)}<span class="member-name">${escapeHtml(u.nickname || u.username)}</span>${roleBadge}`;
+      const roleBadge = hasPerm(PERMS.MANAGE_ROLES) && u.username !== username && u.role !== "owner"
+        ? `<button class="role-toggle-btn" data-tooltip="Cargos">${ICONS.shield}</button>` : "";
+      const nameColor = u.roleColor ? ` style="color:${u.roleColor}"` : "";
+      const roleTag = u.roleNames && u.roleNames.length ? ` <small style="color:var(--text-muted)">${escapeHtml(u.roleNames[0])}</small>` : "";
+      li.innerHTML = `${avatarWithStatusHtml(u.username, u.avatar, 26, u.status)}<span class="member-name"${nameColor}>${escapeHtml(u.nickname || u.username)}</span>${roleTag}${roleBadge}`;
       li.querySelector(".member-name").addEventListener("click", () => openUserProfile(u.username));
       const roleBtn = li.querySelector(".role-toggle-btn");
-      if (roleBtn) roleBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const newRole = prompt(`Cargo de ${u.username} nesse servidor: digite "moderator" ou "member"`, "moderator");
-        if (newRole === "moderator" || newRole === "member") socket.emit("set-member-role", { targetUsername: u.username, role: newRole, serverId: currentServerId });
-      });
+      if (roleBtn) roleBtn.addEventListener("click", (e) => { e.stopPropagation(); openMemberRolesModal(u.username); });
       memberItems.appendChild(li);
     });
   };
 
   renderGroup("Dono", owners);
-  renderGroup("Moderadores", moderators);
   renderGroup("Membros", members);
   renderGroup("Offline", offline, true);
 }
