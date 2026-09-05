@@ -182,10 +182,19 @@ io.on("connection", (socket) => {
     broadcastOnlineForDm();
   }
 
-  socket.on("register", async ({ username, password, avatar }) => {
+  socket.on("register", async ({ username, password, avatar, email, birthDate }) => {
     username = (username || "").trim().slice(0, 24);
     if (!username || !password || password.length < 4) {
       socket.emit("auth-error", "Preencha um nome e uma senha com pelo menos 4 caracteres.");
+      return;
+    }
+    if (!birthDate) {
+      socket.emit("auth-error", "Preencha sua data de nascimento.");
+      return;
+    }
+    const age = Math.floor((Date.now() - new Date(birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+    if (age < 13) {
+      socket.emit("auth-error", "Você precisa ter pelo menos 13 anos para criar uma conta.");
       return;
     }
     const { data: existing } = await db.from("users").select("*").eq("username", username).maybeSingle();
@@ -194,10 +203,11 @@ io.on("connection", (socket) => {
       return;
     }
     const password_hash = await bcrypt.hash(password, 10);
-    if (existing) await db.from("users").update({ password_hash, avatar: avatar || existing.avatar }).eq("username", username);
-    else await db.from("users").insert({ username, avatar: avatar || null, role: "member", password_hash });
+    const userData = { password_hash, avatar: avatar || existing?.avatar || null, email: email || null, birth_date: birthDate };
+    if (existing) await db.from("users").update(userData).eq("username", username);
+    else await db.from("users").insert({ username, role: "member", ...userData });
 
-    await completeAuth(username, avatar || existing?.avatar || null);
+    await completeAuth(username, userData.avatar);
   });
 
   socket.on("login", async ({ username, password }) => {
