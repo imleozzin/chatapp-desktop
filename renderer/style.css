@@ -508,6 +508,7 @@ html, body { font-size: 15px; }
   display: flex; align-items: center; justify-content: space-between;
   font-size: 13px; color: var(--text);
 }
+#slowmode-banner { border-left-color: var(--accent-2); }
 
 /* ---------- Autocompletar ---------- */
 .message-input-wrap { position: relative; flex: 1; }

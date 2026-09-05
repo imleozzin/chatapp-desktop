@@ -38,6 +38,7 @@ const ICONS = {
   image: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
   logout: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
 };
 
 
@@ -173,6 +174,8 @@ const createChannelTitle = document.getElementById("create-channel-title");
 const createChannelInput = document.getElementById("create-channel-input");
 const createChannelCategorySelect = document.getElementById("create-channel-category");
 const createChannelCategoryLabel = document.getElementById("create-channel-category-label");
+const createChannelSlowmodeLabel = document.getElementById("create-channel-slowmode-label");
+const createChannelSlowmodeInput = document.getElementById("create-channel-slowmode-input");
 const createChannelPrivate = document.getElementById("create-channel-private");
 const createChannelInviteWrap = document.getElementById("create-channel-invite-wrap");
 const createChannelInviteInput = document.getElementById("create-channel-invite-input");
@@ -216,6 +219,34 @@ const replyPreviewText = document.getElementById("reply-preview-text");
 const replyCancel = document.getElementById("reply-cancel");
 const autocompleteList = document.getElementById("autocomplete-list");
 const videoGrid = document.getElementById("video-grid");
+const slowmodeBanner = document.getElementById("slowmode-banner");
+const slowmodeBannerText = document.getElementById("slowmode-banner-text");
+const lastSentAtByChannel = new Map(); // channelId -> timestamp, só um palpite local; o servidor sempre valida de novo
+let slowmodeInterval = null;
+
+function currentChannelSlowMode() {
+  if (currentDmUser || !currentChannel) return 0;
+  if (myRole === "owner" || myRole === "moderator") return 0;
+  const ch = channels.find((c) => c.id === currentChannel);
+  return ch?.slow_mode_seconds || 0;
+}
+function showSlowModeBanner(remainingMs) {
+  clearInterval(slowmodeInterval);
+  const tick = () => {
+    const secs = Math.ceil(remainingMs / 1000);
+    if (secs <= 0) { hideSlowModeBanner(); return; }
+    slowmodeBannerText.textContent = `Modo lento: aguarde ${secs}s para enviar outra mensagem.`;
+    slowmodeBanner.classList.remove("hidden");
+    remainingMs -= 1000;
+  };
+  tick();
+  slowmodeInterval = setInterval(tick, 1000);
+}
+function hideSlowModeBanner() {
+  clearInterval(slowmodeInterval);
+  slowmodeInterval = null;
+  slowmodeBanner.classList.add("hidden");
+}
 
 // ---------- Helpers ----------
 function colorForUsername(name) {
@@ -746,6 +777,7 @@ function connectSocket(serverUrl) {
     if (el) el.innerHTML = linkEmbedHtml(embed);
   });
   socket.on("message-deleted", ({ messageId }) => { const el = messagesEl.querySelector(`.msg[data-id="${messageId}"]`); if (el) el.remove(); });
+  socket.on("slow-mode-blocked", ({ channelId, retryAfterMs }) => { if (channelId === currentChannel) showSlowModeBanner(retryAfterMs); });
   socket.on("system-message", appendSystemMessage);
   socket.on("user-list", ({ serverId, members }) => { if (serverId === currentServerId) renderMemberList(members); });
   socket.on("online-users", (users) => { lastOnlineUsers = users; renderDmList(users); });
@@ -1282,13 +1314,14 @@ function updateRoleUI() {
 function renderChannelLists() {
   const isOwner = myRole === "owner";
   const deleteBtnHtml = isOwner ? `<span class="channel-delete" data-tooltip="Apagar canal">${ICONS.x}</span>` : "";
+  const slowModeBtnHtml = isOwner ? `<span class="channel-slowmode" data-tooltip="Modo lento">${ICONS.clock}</span>` : "";
 
   textChannelsEl.innerHTML = "";
   voiceChannelsEl.innerHTML = "";
 
   const textChs = channels.filter((c) => c.type === "text");
   const uncategorized = textChs.filter((c) => !c.category_id);
-  uncategorized.forEach((ch) => appendChannelLi(textChannelsEl, ch, deleteBtnHtml, ch.is_private ? ICONS.lock : ICONS.hash, () => joinChannel(ch.id)));
+  uncategorized.forEach((ch) => appendChannelLi(textChannelsEl, ch, deleteBtnHtml, ch.is_private ? ICONS.lock : ICONS.hash, () => joinChannel(ch.id), false, slowModeBtnHtml));
 
   categories.forEach((cat) => {
     const inCat = textChs.filter((c) => c.category_id === cat.id);
@@ -1303,22 +1336,33 @@ function renderChannelLists() {
       renderChannelLists();
     });
     textChannelsEl.appendChild(header);
-    if (!isCollapsed) inCat.forEach((ch) => appendChannelLi(textChannelsEl, ch, deleteBtnHtml, ch.is_private ? ICONS.lock : ICONS.hash, () => joinChannel(ch.id)));
+    if (!isCollapsed) inCat.forEach((ch) => appendChannelLi(textChannelsEl, ch, deleteBtnHtml, ch.is_private ? ICONS.lock : ICONS.hash, () => joinChannel(ch.id), false, slowModeBtnHtml));
   });
 
   channels.filter((c) => c.type === "voice").forEach((ch) => appendChannelLi(voiceChannelsEl, ch, deleteBtnHtml, ICONS.volume, () => joinVoiceChannel(ch.id), true));
 }
 
-function appendChannelLi(container, ch, deleteBtnHtml, icon, onClick, isVoice) {
+function appendChannelLi(container, ch, deleteBtnHtml, icon, onClick, isVoice, slowModeBtnHtml) {
   const li = document.createElement("li");
   const activeClass = isVoice ? (inVoiceChannel === ch.id ? " active" : "") : (ch.id === currentChannel && !currentDmUser ? " active" : "");
   li.className = "channel-item" + (isVoice ? " voice-item" : "") + activeClass;
   const unreadDot = !isVoice && unreadChannels.has(ch.id) ? `<span class="unread-dot"></span>` : "";
-  li.innerHTML = `<span class="channel-hash">${icon}</span><span class="channel-name">${escapeHtml(ch.name)}</span>${unreadDot}${deleteBtnHtml}`;
+  const slowIndicator = !isVoice && ch.slow_mode_seconds > 0 ? `<span class="channel-hash" data-tooltip="Modo lento: ${ch.slow_mode_seconds}s">${ICONS.clock}</span>` : "";
+  li.innerHTML = `<span class="channel-hash">${icon}</span><span class="channel-name">${escapeHtml(ch.name)}</span>${unreadDot}${slowIndicator}${slowModeBtnHtml || ""}${deleteBtnHtml}`;
   li.querySelector(".channel-name").addEventListener("click", onClick);
-  li.querySelector(".channel-hash").addEventListener("click", onClick);
+  li.querySelectorAll(".channel-hash")[0].addEventListener("click", onClick);
   const delBtn = li.querySelector(".channel-delete");
   if (delBtn) delBtn.addEventListener("click", (e) => { e.stopPropagation(); if (confirm(`Apagar o canal ${ch.name}?`)) socket.emit("delete-channel", { id: ch.id, serverId: currentServerId }); });
+  const slowBtn = li.querySelector(".channel-slowmode");
+  if (slowBtn) {
+    slowBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const input = prompt(`Modo lento para #${ch.name} (segundos entre mensagens de cada pessoa, 0 desativa):`, String(ch.slow_mode_seconds || 0));
+      if (input === null) return;
+      const seconds = Math.max(0, Math.min(21600, parseInt(input, 10) || 0));
+      socket.emit("set-channel-slow-mode", { id: ch.id, serverId: currentServerId, slowModeSeconds: seconds });
+    });
+  }
   container.appendChild(li);
 }
 
@@ -1330,6 +1374,9 @@ function openCreateChannelModal(type) {
   createChannelInput.value = "";
   createChannelCategoryLabel.classList.toggle("hidden", type === "voice");
   createChannelCategorySelect.classList.toggle("hidden", type === "voice");
+  createChannelSlowmodeLabel.classList.toggle("hidden", type === "voice");
+  createChannelSlowmodeInput.classList.toggle("hidden", type === "voice");
+  createChannelSlowmodeInput.value = "0";
   createChannelOverlay.classList.remove("hidden");
   createChannelInput.focus();
 }
@@ -1342,7 +1389,8 @@ createChannelConfirm.addEventListener("click", () => {
   const inviteUsernames = isPrivate
     ? createChannelInviteInput.value.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
-  socket.emit("create-channel", { name, type: pendingChannelType, serverId: currentServerId, categoryId: createChannelCategorySelect.value || null, isPrivate, inviteUsernames });
+  const slowModeSeconds = pendingChannelType === "voice" ? 0 : parseInt(createChannelSlowmodeInput.value, 10) || 0;
+  socket.emit("create-channel", { name, type: pendingChannelType, serverId: currentServerId, categoryId: createChannelCategorySelect.value || null, isPrivate, inviteUsernames, slowModeSeconds });
   createChannelOverlay.classList.add("hidden");
   createChannelPrivate.checked = false;
   createChannelInviteWrap.classList.add("hidden");
@@ -1355,6 +1403,7 @@ function joinChannel(channel) {
   unreadChannels.delete(channel);
   replyTarget = null;
   hideReplyPreview();
+  hideSlowModeBanner();
   const ch = channels.find((c) => c.id === channel);
   currentChannelName.textContent = "#" + (ch ? ch.name : channel);
   messagesEl.innerHTML = "";
@@ -1391,8 +1440,17 @@ messageForm.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = messageInput.value;
   if (!text.trim() && !pendingAttachment) return;
-  if (currentDmUser) socket.emit("dm-message", { toUsername: currentDmUser, text });
-  else socket.emit("chat-message", { text, attachment: pendingAttachment, replyToId: replyTarget ? replyTarget.id : null });
+  if (currentDmUser) {
+    socket.emit("dm-message", { toUsername: currentDmUser, text });
+  } else {
+    const slowMode = currentChannelSlowMode();
+    if (slowMode > 0) {
+      const waitMs = slowMode * 1000 - (Date.now() - (lastSentAtByChannel.get(currentChannel) || 0));
+      if (waitMs > 0) { showSlowModeBanner(waitMs); return; }
+      lastSentAtByChannel.set(currentChannel, Date.now());
+    }
+    socket.emit("chat-message", { text, attachment: pendingAttachment, replyToId: replyTarget ? replyTarget.id : null });
+  }
   messageInput.value = "";
   clearAttachment();
   replyTarget = null;

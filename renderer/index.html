@@ -260,6 +260,10 @@
         <button id="attachment-remove" class="icon-btn" data-tooltip="Remover anexo">✕</button>
       </div>
 
+      <div id="slowmode-banner" class="reply-preview hidden">
+        <span id="slowmode-banner-text"></span>
+      </div>
+
       <form id="message-form" class="message-form">
         <button id="attach-btn" type="button" class="icon-btn attach-icon" data-tooltip="Anexar arquivo"></button>
         <div class="message-input-wrap">
@@ -350,6 +354,8 @@
       <select id="create-channel-category" class="modal-input">
         <option value="">Sem categoria</option>
       </select>
+      <label class="field-label" id="create-channel-slowmode-label">Modo lento (segundos entre mensagens, 0 = desativado)</label>
+      <input id="create-channel-slowmode-input" type="number" min="0" max="21600" value="0" class="modal-input" />
       <label class="checkbox-label">
         <input id="create-channel-private" type="checkbox" />
         Canal privado (só quem eu convidar consegue ver)
