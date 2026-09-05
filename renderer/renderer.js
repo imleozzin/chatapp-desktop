@@ -494,6 +494,7 @@ loginSubmitBtn.addEventListener("click", doLogin);
 loginPasswordInput.addEventListener("keydown", (e) => e.key === "Enter" && doLogin());
 
 function doRegister() {
+  console.log("[cliente] botão Criar conta clicado. socket existe?", !!socket, "conectado?", socket && socket.connected);
   const uname = registerUsernameInput.value.trim();
   const pass = registerPasswordInput.value;
   const email = registerEmailInput.value.trim();
@@ -503,6 +504,7 @@ function doRegister() {
   if (pass.length < 4) { registerError.textContent = "A senha precisa ter pelo menos 4 caracteres."; return; }
   if (!day || !month || !year) { registerError.textContent = "Preencha sua data de nascimento."; return; }
   const birthDate = `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+  console.log("[cliente] emitindo register para", uname, birthDate);
   socket.emit("register", { username: uname, password: pass, avatar: myAvatar, email: email || null, birthDate });
 }
 registerSubmitBtn.addEventListener("click", doRegister);
