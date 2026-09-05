@@ -511,15 +511,18 @@ registerSubmitBtn.addEventListener("click", doRegister);
 registerPasswordInput.addEventListener("keydown", (e) => e.key === "Enter" && doRegister());
 
 function connectSocket(serverUrl) {
+  console.log("[cliente] tentando conectar em:", JSON.stringify(serverUrl));
   socket = io(serverUrl, { reconnectionAttempts: 5, timeout: 8000 });
 
   socket.on("connect", () => {
+    console.log("[cliente] CONECTADO! socket.id =", socket.id, "transporte:", socket.io.engine.transport.name);
     if (pendingSessionToken) {
       socket.emit("login-with-token", { token: pendingSessionToken });
     }
   });
 
-  socket.on("connect_error", () => {
+  socket.on("connect_error", (err) => {
+    console.log("[cliente] ERRO DE CONEXÃO:", err.message);
     loginError.textContent = "Não foi possível conectar ao servidor.";
     registerError.textContent = "Não foi possível conectar ao servidor.";
   });
