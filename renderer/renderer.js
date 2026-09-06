@@ -86,7 +86,9 @@ const PERM_LABELS_PT = {
   ADMINISTRATOR: "Administrador (todas as permissões)",
 };
 let myPermissions = 0;
-function hasPerm(bit) { return (myPermissions & PERMS.ADMINISTRATOR) !== 0 || (myPermissions & bit) !== 0; }
+// O dono de verdade sempre passa, mesmo no instante entre o "my-role" chegar e o "my-permissions"
+// (que é assíncrono e separado) ainda não ter chegado — sem isso a UI dele pisca sem permissão.
+function hasPerm(bit) { return myRole === "owner" || (myPermissions & PERMS.ADMINISTRATOR) !== 0 || (myPermissions & bit) !== 0; }
 let pendingAttachment = null;
 let replyTarget = null; // {id, username, text}
 let typingTimeout = null;
@@ -403,6 +405,8 @@ const addFriendConfirm = document.getElementById("add-friend-confirm");
 const addFriendError = document.getElementById("add-friend-error");
 
 function showFriendsHome() {
+  hideSlowModeBanner();
+  closeThreadPanel();
   currentServerId = null;
   currentChannel = null;
   currentDmUser = null;
@@ -874,7 +878,7 @@ function connectSocket(serverUrl) {
     searchResultsEl.classList.remove("hidden");
   });
 
-  socket.on("dm-history", ({ withUsername, messages }) => { if (currentDmUser === withUsername) renderDmHistory(messages); });
+  socket.on("dm-history", ({ withUsername, messages }) => { if (currentDmUser === withUsername) renderDmHistory(messages, withUsername); });
   socket.on("dm-message", async (msg) => {
     if (currentDmUser && (msg.from === currentDmUser || msg.to === currentDmUser)) appendDmMessage(msg);
     if (msg.from !== username && msg.from !== currentDmUser) {
@@ -1242,6 +1246,8 @@ function editServerIcon(serverId) {
 }
 function selectServer(serverId) {
   hideFriendsHome();
+  hideSlowModeBanner();
+  closeThreadPanel();
   currentServerId = serverId;
   currentChannel = null;
   currentDmUser = null;
@@ -1372,8 +1378,10 @@ document.getElementById("menu-leave-server").addEventListener("click", () => {
 });
 
 function hasAnyServerAdminPerm() {
+  // Só permissões com uma aba de verdade nas configurações do servidor — MANAGE_EMOJIS não tem
+  // (emoji se gerencia pelo próprio picker de emojis), então não entra aqui.
   return hasPerm(PERMS.MANAGE_CHANNELS) || hasPerm(PERMS.MANAGE_ROLES) || hasPerm(PERMS.KICK_MEMBERS) ||
-    hasPerm(PERMS.BAN_MEMBERS) || hasPerm(PERMS.MANAGE_SERVER) || hasPerm(PERMS.MANAGE_EMOJIS) || hasPerm(PERMS.MANAGE_WEBHOOKS);
+    hasPerm(PERMS.BAN_MEMBERS) || hasPerm(PERMS.MANAGE_SERVER) || hasPerm(PERMS.MANAGE_WEBHOOKS);
 }
 function updateServerMenuVisibility() {
   const isOwner = myRole === "owner";
@@ -1601,7 +1609,7 @@ createRoleBtn.addEventListener("click", () => openRoleEditor(null));
 roleEditorCancel.addEventListener("click", () => roleEditorOverlay.classList.add("hidden"));
 roleEditorSave.addEventListener("click", () => {
   const name = roleEditorNameInput.value.trim();
-  if (!editingRoleId && !name) return;
+  if (!name && !roleEditorNameInput.disabled) return; // nome só é opcional pro cargo "everyone" (campo desabilitado)
   let permissions = 0;
   roleEditorPermissions.querySelectorAll("input[data-perm]:checked").forEach((cb) => { permissions |= PERMS[cb.dataset.perm]; });
   const color = roleEditorColorInput.value;
@@ -1738,7 +1746,7 @@ createChannelConfirm.addEventListener("click", () => {
   const inviteUsernames = isPrivate
     ? createChannelInviteInput.value.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
-  const slowModeSeconds = pendingChannelType === "voice" ? 0 : parseInt(createChannelSlowmodeInput.value, 10) || 0;
+  const slowModeSeconds = pendingChannelType === "voice" ? 0 : Math.max(0, Math.min(21600, parseInt(createChannelSlowmodeInput.value, 10) || 0));
   socket.emit("create-channel", { name, type: pendingChannelType, serverId: currentServerId, categoryId: createChannelCategorySelect.value || null, isPrivate, inviteUsernames, slowModeSeconds });
   createChannelOverlay.classList.add("hidden");
   createChannelPrivate.checked = false;
@@ -2310,6 +2318,8 @@ function renderDmList(users) {
 }
 function openDm(withUsername) {
   hideFriendsHome();
+  hideSlowModeBanner();
+  closeThreadPanel();
   currentDmUser = withUsername;
   currentChannel = null;
   lastMsgAuthor = null; lastMsgTime = 0;
@@ -2328,14 +2338,21 @@ function openDm(withUsername) {
   socket.emit("get-public-key", { username: withUsername });
   ensureMyKeyPair();
 }
-function renderDmHistory(messages) {
+function renderDmHistory(messages, withUsername) {
   messagesEl.innerHTML = ""; lastMsgAuthor = null; lastMsgTime = 0;
-  (async () => { for (const msg of messages) await appendDmMessage(msg); })();
+  (async () => {
+    for (const msg of messages) {
+      if (currentDmUser !== withUsername) return; // saiu dessa conversa enquanto decifrava — para de anexar mensagens
+      await appendDmMessage(msg);
+    }
+  })();
 }
 async function appendDmMessage(msg) {
   const grouped = msg.from === lastMsgAuthor && (msg.timestamp - lastMsgTime) < GROUP_WINDOW_MS;
   lastMsgAuthor = msg.from; lastMsgTime = msg.timestamp;
   const displayMsg = await resolveDmMessageText(msg);
+  const peer = msg.from === username ? msg.to : msg.from;
+  if (currentDmUser !== peer) return; // saiu dessa conversa enquanto decifrava (decrypt é assíncrono) — não mistura com a tela atual
   const div = document.createElement("div");
   div.className = "msg" + (grouped ? " grouped" : "");
   div.dataset.id = msg.id;
