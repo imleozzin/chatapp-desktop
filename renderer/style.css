@@ -149,6 +149,8 @@ input, button, select { font-family: var(--font); }
   padding: 6px 12px; border-radius: 6px; font-size: 12.5px; cursor: pointer;
 }
 .ghost-btn:hover { background: var(--bg-sidebar-hover); }
+.ghost-btn.danger { color: var(--danger); border-color: var(--danger); }
+.ghost-btn.danger:hover { background: var(--danger); color: #fff; }
 .primary-btn {
   background: var(--accent); color: #fff; border: none;
   padding: 9px 16px; border-radius: 7px; font-weight: 600; font-size: 14px; cursor: pointer;
@@ -260,6 +262,19 @@ input, button, select { font-family: var(--font); }
 .msg .msg-text { font-size: 15px; line-height: 1.45; color: #ded9f2; word-wrap: break-word; }
 .msg.system { color: var(--text-muted); font-size: 13px; font-style: italic; padding-left: 16px; }
 .msg-edited { font-size: 10px; color: var(--text-muted); }
+.webhook-tag { background: var(--accent); color: #fff; font-size: 9px; font-weight: 700; letter-spacing: 0.3px; padding: 1.5px 5px; border-radius: 3px; vertical-align: middle; }
+.thread-pill {
+  display: flex; align-items: center; gap: 6px; margin-top: 6px; padding: 5px 10px;
+  background: var(--bg-input); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--accent); font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.thread-pill:hover { border-color: var(--accent); background: var(--bg-sidebar-hover); }
+.thread-modal { width: 460px; height: 620px; max-height: 80vh; padding: 0; display: flex; flex-direction: column; }
+.thread-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.thread-modal-title { font-size: 16px; font-weight: 700; color: var(--text-header); }
+.thread-modal-header-actions { display: flex; align-items: center; gap: 4px; }
+.thread-modal .messages { flex: 1; padding: 12px 0 8px; }
+.thread-modal .message-form { padding: 0 16px 16px; }
 .msg-pinned-tag { font-size: 11px; }
 .msg-react-btn, .msg-edit-btn, .msg-delete-btn, .msg-pin-btn {
   background: none; border: none; color: var(--text-muted); font-size: 11px;
@@ -281,7 +296,7 @@ input, button, select { font-family: var(--font); }
 .custom-emoji { width: 22px; height: 22px; vertical-align: -6px; object-fit: contain; }
 
 .mention { background: rgba(139, 110, 242, 0.28); color: #d6c9ff; border-radius: 4px; padding: 0 3px; font-weight: 600; }
-.mention-me { background: rgba(240, 168, 64, 0.32); color: #ffd699; }
+.mention-me, .mention-everyone { background: rgba(240, 168, 64, 0.32); color: #ffd699; }
 
 .typing-indicator { padding: 2px 20px 8px; font-size: 12.5px; color: var(--text-muted); font-style: italic; }
 
@@ -334,15 +349,19 @@ input, button, select { font-family: var(--font); }
 .modal-divider { text-align: center; color: var(--text-muted); font-size: 12px; margin: 16px 0; text-transform: uppercase; }
 .checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text); margin: 4px 0 18px; cursor: pointer; }
 .checkbox-label input { width: 16px; height: 16px; cursor: pointer; }
+.role-permissions-list { max-height: 320px; overflow-y: auto; margin-bottom: 12px; }
+.role-permissions-list .checkbox-label { margin: 0 0 10px; }
+.role-color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
 
 .pinned-list { max-height: 320px; overflow-y: auto; margin-bottom: 12px; }
 .pinned-item { padding: 10px; border-radius: 8px; background: var(--bg-input); margin-bottom: 8px; font-size: 13.5px; color: var(--text); }
 
 /* ---------- Emoji picker ---------- */
 .emoji-picker { position: fixed; z-index: 60; background: var(--bg-sidebar); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; box-shadow: 0 12px 30px rgba(0,0,0,0.5); width: 220px; }
-.emoji-option { font-size: 18px; text-align: center; padding: 4px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.emoji-option { position: relative; font-size: 18px; text-align: center; padding: 4px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .emoji-option:hover { background: var(--bg-sidebar-hover); }
 .emoji-option .custom-emoji { width: 20px; height: 20px; vertical-align: 0; }
+.emoji-gif-badge { position: absolute; bottom: -2px; right: -2px; background: var(--accent); color: #fff; font-size: 7px; font-weight: 700; line-height: 1; padding: 1.5px 2.5px; border-radius: 3px; pointer-events: none; }
 
 /* ---------- Tooltips (legendas ao passar o mouse) ---------- */
 [data-tooltip] { position: relative; }
@@ -506,6 +525,7 @@ html, body { font-size: 15px; }
   display: flex; align-items: center; justify-content: space-between;
   font-size: 13px; color: var(--text);
 }
+#slowmode-banner { border-left-color: var(--accent-2); }
 
 /* ---------- Autocompletar ---------- */
 .message-input-wrap { position: relative; flex: 1; }
@@ -752,6 +772,7 @@ body { display: flex; flex-direction: column; }
 }
 .friend-row:hover { background: var(--bg-sidebar-hover); }
 .friend-name { flex: 1; font-size: 14.5px; color: var(--text); }
+.webhook-url-input { display: block; margin-top: 6px; font-size: 11.5px; padding: 5px 8px; cursor: text; }
 .friend-msg-btn { font-size: 12px; padding: 5px 10px; }
 
 /* ---------- Modal de escolher tela pra compartilhar ---------- */

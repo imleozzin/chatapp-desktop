@@ -89,6 +89,7 @@
             <span class="server-chevron"></span>
           </button>
           <div id="server-dropdown" class="server-dropdown hidden">
+            <button id="menu-my-server-profile" class="server-dropdown-item"><span></span>Meu apelido/foto neste servidor</button>
             <button id="menu-invite" class="server-dropdown-item"><span></span>Convidar para o servidor</button>
             <button id="menu-create-channel" class="server-dropdown-item"><span></span>Criar canal</button>
             <button id="menu-create-category" class="server-dropdown-item"><span></span>Criar categoria</button>
@@ -260,6 +261,10 @@
         <button id="attachment-remove" class="icon-btn" data-tooltip="Remover anexo">✕</button>
       </div>
 
+      <div id="slowmode-banner" class="reply-preview hidden">
+        <span id="slowmode-banner-text"></span>
+      </div>
+
       <form id="message-form" class="message-form">
         <button id="attach-btn" type="button" class="icon-btn attach-icon" data-tooltip="Anexar arquivo"></button>
         <div class="message-input-wrap">
@@ -328,6 +333,16 @@
             <input id="settings-notifications-checkbox" type="checkbox" />
             Mostrar notificações de novas mensagens
           </label>
+
+          <div class="modal-divider" style="margin:18px 0;">Som de notificação</div>
+          <p class="subtitle" style="text-align:left;">Escolha um som curto (mp3, wav ou ogg) pra tocar quando chegar uma notificação.</p>
+          <div class="modal-actions" style="justify-content:flex-start;">
+            <button id="settings-sound-choose" class="ghost-btn">Escolher som</button>
+            <button id="settings-sound-test" class="ghost-btn">Testar</button>
+            <button id="settings-sound-reset" class="ghost-btn">Usar padrão do sistema</button>
+          </div>
+          <p id="settings-sound-name" class="subtitle" style="text-align:left;">Padrão do sistema</p>
+          <input id="settings-sound-input" type="file" accept="audio/*" class="hidden" />
         </div>
 
         <div id="account-tab-advanced" class="server-settings-tab hidden">
@@ -350,6 +365,8 @@
       <select id="create-channel-category" class="modal-input">
         <option value="">Sem categoria</option>
       </select>
+      <label class="field-label" id="create-channel-slowmode-label">Modo lento (segundos entre mensagens, 0 = desativado)</label>
+      <input id="create-channel-slowmode-input" type="number" min="0" max="21600" value="0" class="modal-input" />
       <label class="checkbox-label">
         <input id="create-channel-private" type="checkbox" />
         Canal privado (só quem eu convidar consegue ver)
@@ -410,6 +427,74 @@
     </div>
   </div>
 
+  <!-- Modal: thread (conversa ramificada a partir de uma mensagem) -->
+  <div id="thread-overlay" class="picker-overlay hidden">
+    <div class="picker-modal thread-modal">
+      <div class="thread-modal-header">
+        <span id="thread-title-display" class="thread-modal-title">Thread</span>
+        <div class="thread-modal-header-actions">
+          <button id="thread-delete-btn" class="icon-btn hidden" data-tooltip="Apagar thread"></button>
+          <button id="thread-close" class="modal-close-x" style="position:static;"></button>
+        </div>
+      </div>
+      <div id="thread-messages" class="messages"></div>
+      <form id="thread-message-form" class="message-form">
+        <div class="message-input-wrap">
+          <input id="thread-message-input" type="text" placeholder="Responder na thread..." autocomplete="off" />
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: apelido e foto neste servidor (diferente do perfil global da conta) -->
+  <div id="server-profile-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2>Seu perfil neste servidor</h2>
+      <p class="subtitle" style="text-align:left;">Apelido e foto só aparecem pra quem está neste servidor — seu perfil global continua o mesmo em todo o resto do QG.</p>
+      <div class="login-avatar-picker">
+        <div id="server-profile-avatar-preview" class="login-avatar-preview">?</div>
+        <input id="server-profile-avatar-input" type="file" accept="image/*" class="hidden" />
+        <button id="server-profile-avatar-btn" type="button" class="ghost-btn">Trocar foto aqui</button>
+        <button id="server-profile-avatar-reset" type="button" class="ghost-btn">Usar foto global</button>
+      </div>
+      <label class="field-label">Apelido neste servidor</label>
+      <input id="server-profile-nickname-input" type="text" class="modal-input" maxlength="32" placeholder="Deixe em branco para usar seu nome de usuário" />
+      <div class="modal-actions">
+        <button id="server-profile-cancel" class="ghost-btn">Cancelar</button>
+        <button id="server-profile-save" class="primary-btn">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: criar/editar cargo -->
+  <div id="role-editor-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2 id="role-editor-title">Criar cargo</h2>
+      <label class="field-label">Nome do cargo</label>
+      <input id="role-editor-name-input" type="text" class="modal-input" maxlength="32" />
+      <label class="field-label">Cor</label>
+      <input id="role-editor-color-input" type="color" class="modal-input" value="#99aab5" style="height:40px; padding:4px;" />
+      <label class="field-label">Permissões</label>
+      <div id="role-editor-permissions" class="role-permissions-list"></div>
+      <div class="modal-actions">
+        <button id="role-editor-delete" class="danger-btn hidden">Apagar cargo</button>
+        <button id="role-editor-cancel" class="ghost-btn">Cancelar</button>
+        <button id="role-editor-save" class="primary-btn">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: cargos de um membro específico -->
+  <div id="member-roles-overlay" class="picker-overlay hidden">
+    <div class="picker-modal">
+      <h2 id="member-roles-title">Cargos</h2>
+      <div id="member-roles-list" class="role-permissions-list"></div>
+      <div class="modal-actions">
+        <button id="member-roles-close" class="primary-btn">Fechar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: mostrar código de convite -->
   <div id="invite-overlay" class="picker-overlay hidden">
     <div class="picker-modal">
@@ -438,9 +523,12 @@
     <div class="picker-modal server-settings-modal">
       <div class="server-settings-nav">
         <div class="server-settings-nav-title" id="server-settings-title">Servidor</div>
-        <button class="server-settings-nav-item active" data-tab="overview">Visão geral</button>
+        <button class="server-settings-nav-item" data-tab="overview">Visão geral</button>
         <button class="server-settings-nav-item" data-tab="members">Membros</button>
         <button class="server-settings-nav-item" data-tab="invites">Convites</button>
+        <button class="server-settings-nav-item" data-tab="roles">Cargos</button>
+        <button class="server-settings-nav-item" data-tab="webhooks">Webhooks</button>
+        <button class="server-settings-nav-item" data-tab="bans">Banidos</button>
         <div class="server-settings-nav-divider"></div>
         <button class="server-settings-nav-item danger" data-tab="delete">Excluir servidor</button>
       </div>
@@ -464,6 +552,31 @@
           <p class="subtitle" style="text-align:left;">Compartilhe esse código para convidar pessoas.</p>
           <input id="server-invite-code-display" type="text" class="modal-input" readonly />
           <button id="server-invite-regenerate" class="ghost-btn">Gerar novo código</button>
+        </div>
+
+        <div id="settings-tab-roles" class="server-settings-tab hidden">
+          <h2>Cargos</h2>
+          <p class="subtitle" style="text-align:left;">Cargos dão permissões combináveis — cada pessoa pode ter vários. "everyone" é a base que toda pessoa do servidor tem.</p>
+          <div id="server-roles-list" class="friends-list"></div>
+          <button id="create-role-btn" class="ghost-btn" style="margin-top:10px;">Criar cargo</button>
+        </div>
+
+        <div id="settings-tab-webhooks" class="server-settings-tab hidden">
+          <h2>Webhooks</h2>
+          <p class="subtitle" style="text-align:left;">Um webhook deixa uma ferramenta externa postar mensagens direto num canal, sem precisar de uma conta.</p>
+          <div id="server-webhooks-list" class="friends-list"></div>
+          <div class="modal-divider" style="margin:16px 0;">Criar webhook</div>
+          <label class="field-label">Nome</label>
+          <input id="create-webhook-name-input" type="text" class="modal-input" maxlength="32" placeholder="ex: Avisos do site" />
+          <label class="field-label">Canal</label>
+          <select id="create-webhook-channel-select" class="modal-input"></select>
+          <button id="create-webhook-btn" class="ghost-btn">Criar webhook</button>
+        </div>
+
+        <div id="settings-tab-bans" class="server-settings-tab hidden">
+          <h2>Banidos</h2>
+          <p class="subtitle" style="text-align:left;">Quem está aqui não consegue voltar a esse servidor, nem com um convite novo.</p>
+          <div id="server-bans-settings-list" class="friends-list"></div>
         </div>
 
         <div id="settings-tab-delete" class="server-settings-tab hidden">

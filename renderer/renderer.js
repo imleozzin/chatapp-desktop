@@ -38,6 +38,8 @@ const ICONS = {
   image: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
   logout: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  thread: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 9v6"/><path d="M6 9a9 9 0 0 0 9 9"/></svg>',
 };
 
 
@@ -48,6 +50,8 @@ let myBanner = null;
 let myBio = "";
 let myStatus = "online";
 let notificationsEnabled = true;
+let notificationSound = null; // data URL do som customizado, ou null pra usar o som padrão do sistema
+let notificationSoundName = "";
 let myServers = [];
 let currentServerId = null;
 let currentChannel = null;
@@ -57,6 +61,34 @@ let categories = [];
 const collapsedCategories = new Set();
 let customEmojis = [];
 let myRole = "member";
+const PERMS = {
+  MANAGE_CHANNELS: 1 << 0,
+  MANAGE_ROLES: 1 << 1,
+  KICK_MEMBERS: 1 << 2,
+  BAN_MEMBERS: 1 << 3,
+  MANAGE_MESSAGES: 1 << 4,
+  MANAGE_EMOJIS: 1 << 5,
+  MANAGE_SERVER: 1 << 6,
+  MENTION_EVERYONE: 1 << 7,
+  MANAGE_WEBHOOKS: 1 << 8,
+  ADMINISTRATOR: 1 << 9,
+};
+const PERM_LABELS_PT = {
+  MANAGE_CHANNELS: "Gerenciar canais",
+  MANAGE_ROLES: "Gerenciar cargos",
+  KICK_MEMBERS: "Remover membros",
+  BAN_MEMBERS: "Banir membros",
+  MANAGE_MESSAGES: "Gerenciar mensagens (apagar/fixar de outras pessoas)",
+  MANAGE_EMOJIS: "Gerenciar emojis",
+  MANAGE_SERVER: "Gerenciar servidor (nome, ícone, convites)",
+  MENTION_EVERYONE: "Mencionar @everyone e @here",
+  MANAGE_WEBHOOKS: "Gerenciar webhooks",
+  ADMINISTRATOR: "Administrador (todas as permissões)",
+};
+let myPermissions = 0;
+// O dono de verdade sempre passa, mesmo no instante entre o "my-role" chegar e o "my-permissions"
+// (que é assíncrono e separado) ainda não ter chegado — sem isso a UI dele pisca sem permissão.
+function hasPerm(bit) { return myRole === "owner" || (myPermissions & PERMS.ADMINISTRATOR) !== 0 || (myPermissions & bit) !== 0; }
 let pendingAttachment = null;
 let replyTarget = null; // {id, username, text}
 let typingTimeout = null;
@@ -173,6 +205,8 @@ const createChannelTitle = document.getElementById("create-channel-title");
 const createChannelInput = document.getElementById("create-channel-input");
 const createChannelCategorySelect = document.getElementById("create-channel-category");
 const createChannelCategoryLabel = document.getElementById("create-channel-category-label");
+const createChannelSlowmodeLabel = document.getElementById("create-channel-slowmode-label");
+const createChannelSlowmodeInput = document.getElementById("create-channel-slowmode-input");
 const createChannelPrivate = document.getElementById("create-channel-private");
 const createChannelInviteWrap = document.getElementById("create-channel-invite-wrap");
 const createChannelInviteInput = document.getElementById("create-channel-invite-input");
@@ -216,6 +250,34 @@ const replyPreviewText = document.getElementById("reply-preview-text");
 const replyCancel = document.getElementById("reply-cancel");
 const autocompleteList = document.getElementById("autocomplete-list");
 const videoGrid = document.getElementById("video-grid");
+const slowmodeBanner = document.getElementById("slowmode-banner");
+const slowmodeBannerText = document.getElementById("slowmode-banner-text");
+const lastSentAtByChannel = new Map(); // channelId -> timestamp, só um palpite local; o servidor sempre valida de novo
+let slowmodeInterval = null;
+
+function currentChannelSlowMode() {
+  if (currentDmUser || !currentChannel) return 0;
+  if (hasPerm(PERMS.MANAGE_MESSAGES)) return 0;
+  const ch = channels.find((c) => c.id === currentChannel);
+  return ch?.slow_mode_seconds || 0;
+}
+function showSlowModeBanner(remainingMs) {
+  clearInterval(slowmodeInterval);
+  const tick = () => {
+    const secs = Math.ceil(remainingMs / 1000);
+    if (secs <= 0) { hideSlowModeBanner(); return; }
+    slowmodeBannerText.textContent = `Modo lento: aguarde ${secs}s para enviar outra mensagem.`;
+    slowmodeBanner.classList.remove("hidden");
+    remainingMs -= 1000;
+  };
+  tick();
+  slowmodeInterval = setInterval(tick, 1000);
+}
+function hideSlowModeBanner() {
+  clearInterval(slowmodeInterval);
+  slowmodeInterval = null;
+  slowmodeBanner.classList.add("hidden");
+}
 
 // ---------- Helpers ----------
 function colorForUsername(name) {
@@ -236,7 +298,7 @@ function avatarHtml(username_, avatar, size) {
 function avatarWithStatusHtml(username_, avatar, size, status) {
   return `<div class="avatar-with-status" style="width:${size}px;height:${size}px">${avatarHtml(username_, avatar, size)}<span class="status-dot status-${status || "online"}"></span></div>`;
 }
-function renderMessageText(text) {
+function renderMessageText(text, mentionsEveryone) {
   let escaped = escapeHtml(text);
   escaped = escaped.replace(/```([\s\S]+?)```/g, (m, code) => `<pre class="msg-code-block">${code}</pre>`);
   escaped = escaped.replace(/`([^`]+)`/g, (m, code) => `<code class="msg-inline-code">${code}</code>`);
@@ -248,7 +310,8 @@ function renderMessageText(text) {
   });
   escaped = escaped.replace(/(^|\s)@(\w+)/g, (match, pre, name) => {
     const isMe = name.toLowerCase() === username.toLowerCase();
-    return `${pre}<span class="mention${isMe ? " mention-me" : ""}">@${name}</span>`;
+    const isEveryone = mentionsEveryone && /^(everyone|here)$/i.test(name);
+    return `${pre}<span class="mention${isMe ? " mention-me" : ""}${isEveryone ? " mention-everyone" : ""}">@${name}</span>`;
   });
   return escaped;
 }
@@ -284,7 +347,8 @@ function readAndResizeImage(file, size) {
 function notify(title, body) {
   if (!notificationsEnabled) return;
   if (document.hasFocus()) return;
-  try { new Notification(title, { body, silent: false }); } catch (_) {}
+  try { new Notification(title, { body, silent: !!notificationSound }); } catch (_) {}
+  if (notificationSound) { try { new Audio(notificationSound).play().catch(() => {}); } catch (_) {} }
 }
 
 // ---------- Barra de título própria ----------
@@ -341,6 +405,8 @@ const addFriendConfirm = document.getElementById("add-friend-confirm");
 const addFriendError = document.getElementById("add-friend-error");
 
 function showFriendsHome() {
+  hideSlowModeBanner();
+  closeThreadPanel();
   currentServerId = null;
   currentChannel = null;
   currentDmUser = null;
@@ -558,6 +624,8 @@ let pendingSessionToken = null;
 (async function init() {
   const config = await window.electronAPI.getConfig();
   notificationsEnabled = config.notificationsEnabled !== false;
+  notificationSound = config.notificationSound || null;
+  notificationSoundName = config.notificationSoundName || "";
   pendingSessionToken = config.sessionToken || null;
   loginError.textContent = "Conectando ao servidor... (pode demorar até 1 minuto se ele estiver \"dormindo\")";
   registerError.textContent = loginError.textContent;
@@ -613,8 +681,10 @@ function doRegister() {
 registerSubmitBtn.addEventListener("click", doRegister);
 registerPasswordInput.addEventListener("keydown", (e) => e.key === "Enter" && doRegister());
 
+let currentServerUrl = "";
 function connectSocket(serverUrl) {
   console.log("[cliente] tentando conectar em:", JSON.stringify(serverUrl));
+  currentServerUrl = serverUrl;
   socket = io(serverUrl, { reconnectionAttempts: 10, reconnectionDelay: 3000, timeout: 60000 });
 
   socket.on("connect", () => {
@@ -646,6 +716,7 @@ function connectSocket(serverUrl) {
     updateMyStatusDot();
     window.electronAPI.setConfig({ sessionToken: token, avatarDataUrl: myAvatar || "" });
     socket.emit("get-user-profile", { username });
+    ensureMyKeyPair();
   });
 
   socket.on("auth-error", (msg) => {
@@ -701,6 +772,7 @@ function connectSocket(serverUrl) {
     viewProfileOverlay.classList.remove("hidden");
   });
   socket.on("server-members-list", ({ serverId, members }) => { if (serverId === currentServerId) renderServerMembersSettings(members); });
+  socket.on("server-bans-list", ({ serverId, bans }) => { if (serverId === currentServerId) renderServerBansSettings(bans); });
   socket.on("kicked-from-server", ({ serverId }) => {
     if (serverId === currentServerId) {
       currentServerId = null;
@@ -721,12 +793,53 @@ function connectSocket(serverUrl) {
     customEmojis = emojis || [];
     renderChannelLists();
     populateCategorySelect();
+    populateWebhookChannelSelect();
     if (!currentChannel && !currentDmUser) {
       const firstText = channels.find((c) => c.type === "text");
       if (firstText) joinChannel(firstText.id);
     }
   });
   socket.on("my-role", ({ serverId, role }) => { if (serverId === currentServerId) { myRole = role; updateRoleUI(); } });
+  socket.on("my-permissions", ({ serverId, permissions }) => {
+    if (serverId !== currentServerId) return;
+    myPermissions = permissions;
+    updateRoleUI();
+    socket.emit("get-roles", { serverId });
+  });
+  socket.on("roles-list", ({ serverId, roles, memberRoles }) => { if (serverId === currentServerId) renderRolesSettings(roles, memberRoles); });
+  socket.on("webhooks-list", ({ serverId, webhooks }) => { if (serverId === currentServerId) renderWebhooksSettings(webhooks); });
+
+  socket.on("threads-list", ({ channelId, threads }) => {
+    if (channelId !== currentChannel) return;
+    threadsByRootMessage.clear();
+    threads.forEach((t) => { if (t.root_message_id) threadsByRootMessage.set(t.root_message_id, { id: t.id, title: t.title, replyCount: t.replyCount }); });
+    threadsByRootMessage.forEach((_, messageId) => renderThreadPillFor(messageId));
+  });
+  socket.on("thread-created", ({ channelId, thread }) => {
+    if (channelId !== currentChannel || !thread.root_message_id) return;
+    threadsByRootMessage.set(thread.root_message_id, { id: thread.id, title: thread.title, replyCount: thread.replyCount || 0 });
+    renderThreadPillFor(thread.root_message_id);
+  });
+  socket.on("thread-history", ({ threadId, thread, messages }) => {
+    if (currentThreadId !== threadId) return;
+    threadTitleDisplay.textContent = thread.title;
+    threadMessagesEl.innerHTML = "";
+    messages.forEach(appendThreadMessage);
+  });
+  socket.on("thread-message", ({ threadId, message }) => {
+    for (const [rootId, t] of threadsByRootMessage) {
+      if (t.id === threadId) { t.replyCount++; renderThreadPillFor(rootId); break; }
+    }
+    if (currentThreadId === threadId) appendThreadMessage(message);
+  });
+  socket.on("thread-deleted", ({ channelId, threadId }) => {
+    if (channelId === currentChannel) {
+      for (const [rootId, t] of threadsByRootMessage) {
+        if (t.id === threadId) { threadsByRootMessage.delete(rootId); renderThreadPillFor(rootId); break; }
+      }
+    }
+    if (currentThreadId === threadId) closeThreadPanel();
+  });
 
   socket.on("chat-history", renderHistory);
   socket.on("chat-message", (msg) => {
@@ -734,7 +847,7 @@ function connectSocket(serverUrl) {
     clearTyping(msg.username);
     if (msg.username !== username) {
       const inThisChannel = msg.channel_id === currentChannel && !currentDmUser;
-      if (textMentionsMe(msg.text)) notify(`${msg.username} mencionou você`, msg.text);
+      if (textMentionsMe(msg.text) || msg.mentions_everyone) notify(`${msg.username} mencionou você`, msg.text);
       else if (!inThisChannel) notify(msg.username, msg.text || "[anexo]");
       if (!inThisChannel) { unreadChannels.add(msg.channel_id); renderChannelLists(); }
     }
@@ -745,6 +858,7 @@ function connectSocket(serverUrl) {
     if (el) el.innerHTML = linkEmbedHtml(embed);
   });
   socket.on("message-deleted", ({ messageId }) => { const el = messagesEl.querySelector(`.msg[data-id="${messageId}"]`); if (el) el.remove(); });
+  socket.on("slow-mode-blocked", ({ channelId, retryAfterMs }) => { if (channelId === currentChannel) showSlowModeBanner(retryAfterMs); });
   socket.on("system-message", appendSystemMessage);
   socket.on("user-list", ({ serverId, members }) => { if (serverId === currentServerId) renderMemberList(members); });
   socket.on("online-users", (users) => { lastOnlineUsers = users; renderDmList(users); });
@@ -764,16 +878,27 @@ function connectSocket(serverUrl) {
     searchResultsEl.classList.remove("hidden");
   });
 
-  socket.on("dm-history", ({ withUsername, messages }) => { if (currentDmUser === withUsername) renderDmHistory(messages); });
-  socket.on("dm-message", (msg) => {
+  socket.on("dm-history", ({ withUsername, messages }) => { if (currentDmUser === withUsername) renderDmHistory(messages, withUsername); });
+  socket.on("dm-message", async (msg) => {
     if (currentDmUser && (msg.from === currentDmUser || msg.to === currentDmUser)) appendDmMessage(msg);
     if (msg.from !== username && msg.from !== currentDmUser) {
-      notify(`${msg.from} (mensagem direta)`, msg.text);
+      let preview = msg.text || "[anexo]";
+      if (msg.encrypted) { const plain = await decryptDm(msg.from, msg.text); preview = plain !== null ? plain : "🔒 Nova mensagem"; }
+      notify(`${msg.from} (mensagem direta)`, preview);
       unreadDms.add(msg.from);
       renderDmList(lastOnlineUsers);
     }
   });
   socket.on("dm-message-updated", (msg) => { if (currentDmUser === msg.from || currentDmUser === msg.to) updateDmMessage(msg); });
+  socket.on("public-key", async ({ username: peerUsername, publicKey }) => {
+    if (!publicKey) { peerPublicKeys.delete(peerUsername); sharedKeysByPeer.delete(peerUsername); if (currentDmUser === peerUsername) updateDmLockIndicator(false); return; }
+    try {
+      const key = await crypto.subtle.importKey("spki", base64ToBuf(publicKey), E2EE_ALG, true, []);
+      peerPublicKeys.set(peerUsername, key);
+      sharedKeysByPeer.delete(peerUsername); // a chave da outra pessoa pode ter mudado (ex: novo dispositivo) — força re-derivar
+      if (currentDmUser === peerUsername) updateDmLockIndicator(true);
+    } catch (_) {}
+  });
   socket.on("dm-message-deleted", ({ messageId }) => { const el = messagesEl.querySelector(`.msg[data-id="${messageId}"]`); if (el) el.remove(); });
 
   socket.on("screen-share-status", ({ active }) => { if (active) screenBanner.classList.remove("hidden"); });
@@ -881,7 +1006,7 @@ function applyStaticIcons() {
   if (friendsBtn) friendsBtn.innerHTML = ICONS.friends;
   const chevrons = document.querySelectorAll(".server-chevron");
   chevrons.forEach((c) => (c.innerHTML = ICONS.chevron));
-  const menuIcons = { "menu-invite": ICONS.mail, "menu-create-channel": ICONS.channelPlus, "menu-create-category": ICONS.folderPlus, "menu-change-icon": ICONS.image, "menu-leave-server": ICONS.logout };
+  const menuIcons = { "menu-my-server-profile": ICONS.pencil, "menu-invite": ICONS.mail, "menu-create-channel": ICONS.channelPlus, "menu-create-category": ICONS.folderPlus, "menu-change-icon": ICONS.image, "menu-leave-server": ICONS.logout };
   Object.entries(menuIcons).forEach(([id, svg]) => { const el = document.querySelector(`#${id} span`); if (el) el.innerHTML = svg; });
   document.querySelectorAll(".friends-home-icon").forEach((el) => { el.innerHTML = ICONS.friends; });
 }
@@ -921,7 +1046,9 @@ function updateAutocomplete() {
 
   if (mentionMatch) {
     const q = mentionMatch[1].toLowerCase();
-    autocompleteMatches = lastMemberList.map((u) => u.username).filter((n) => n.toLowerCase().startsWith(q)).slice(0, 6);
+    const names = lastMemberList.map((u) => u.username);
+    if (!currentDmUser && hasPerm(PERMS.MENTION_EVERYONE)) names.unshift("everyone", "here");
+    autocompleteMatches = names.filter((n) => n.toLowerCase().startsWith(q)).slice(0, 6);
     autocompleteType = "mention";
   } else if (emojiMatch) {
     const q = emojiMatch[1].toLowerCase();
@@ -1001,6 +1128,7 @@ settingsBtn.addEventListener("click", async () => {
   settingsServerInput.value = config.serverUrl;
   settingsStatusSelect.value = myStatus;
   settingsNotificationsCheckbox.checked = notificationsEnabled;
+  settingsSoundName.textContent = notificationSoundName || "Padrão do sistema";
   settingsUsernameDisplay.value = username;
   settingsEmailDisplay.value = "Carregando...";
   settingsNewEmailInput.value = "";
@@ -1034,6 +1162,37 @@ settingsStatusSelect.addEventListener("change", () => {
 settingsNotificationsCheckbox.addEventListener("change", async () => {
   notificationsEnabled = settingsNotificationsCheckbox.checked;
   await window.electronAPI.setConfig({ notificationsEnabled });
+});
+
+const settingsSoundChoose = document.getElementById("settings-sound-choose");
+const settingsSoundTest = document.getElementById("settings-sound-test");
+const settingsSoundReset = document.getElementById("settings-sound-reset");
+const settingsSoundName = document.getElementById("settings-sound-name");
+const settingsSoundInput = document.getElementById("settings-sound-input");
+
+settingsSoundChoose.addEventListener("click", () => settingsSoundInput.click());
+settingsSoundInput.addEventListener("change", () => {
+  const file = settingsSoundInput.files[0];
+  if (!file) return;
+  if (file.size > 1024 * 1024) { alert("Escolha um som menor que 1MB."); return; }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    notificationSound = reader.result;
+    notificationSoundName = file.name;
+    settingsSoundName.textContent = notificationSoundName;
+    await window.electronAPI.setConfig({ notificationSound, notificationSoundName });
+  };
+  reader.readAsDataURL(file);
+});
+settingsSoundTest.addEventListener("click", () => {
+  if (notificationSound) new Audio(notificationSound).play().catch(() => {});
+  else new Notification("QG", { body: "Assim vai soar uma notificação." });
+});
+settingsSoundReset.addEventListener("click", async () => {
+  notificationSound = null;
+  notificationSoundName = "";
+  settingsSoundName.textContent = "Padrão do sistema";
+  await window.electronAPI.setConfig({ notificationSound: "", notificationSoundName: "" });
 });
 
 settingsEmailSave.addEventListener("click", () => {
@@ -1087,11 +1246,14 @@ function editServerIcon(serverId) {
 }
 function selectServer(serverId) {
   hideFriendsHome();
+  hideSlowModeBanner();
+  closeThreadPanel();
   currentServerId = serverId;
   currentChannel = null;
   currentDmUser = null;
   channels = [];
   categories = [];
+  myPermissions = 0;
   const srv = myServers.find((s) => s.id === serverId);
   currentServerNameEl.textContent = srv ? srv.name : "QG";
   messagesEl.innerHTML = "";
@@ -1145,6 +1307,56 @@ serverNameBtn.addEventListener("click", (e) => {
 });
 document.addEventListener("click", (e) => { if (!e.target.closest(".channel-list-header")) serverDropdown.classList.add("hidden"); });
 
+// ---------- Apelido e foto por servidor (diferente do perfil global) ----------
+const serverProfileOverlay = document.getElementById("server-profile-overlay");
+const serverProfileAvatarPreview = document.getElementById("server-profile-avatar-preview");
+const serverProfileAvatarBtn = document.getElementById("server-profile-avatar-btn");
+const serverProfileAvatarInput = document.getElementById("server-profile-avatar-input");
+const serverProfileAvatarReset = document.getElementById("server-profile-avatar-reset");
+const serverProfileNicknameInput = document.getElementById("server-profile-nickname-input");
+const serverProfileCancel = document.getElementById("server-profile-cancel");
+const serverProfileSave = document.getElementById("server-profile-save");
+let serverProfileAvatarChanged = false;
+let serverProfileAvatarValue = null;
+
+function renderServerProfileAvatarPreview() {
+  const avatar = serverProfileAvatarChanged ? serverProfileAvatarValue : (lastMemberList.find((m) => m.username === username)?.avatar || myAvatar);
+  serverProfileAvatarPreview.innerHTML = avatar ? `<img src="${avatar}" />` : escapeHtml(username[0]?.toUpperCase() || "?");
+}
+
+document.getElementById("menu-my-server-profile").addEventListener("click", () => {
+  serverDropdown.classList.add("hidden");
+  const me = lastMemberList.find((m) => m.username === username);
+  serverProfileNicknameInput.value = (me && me.nickname) || "";
+  serverProfileAvatarChanged = false;
+  serverProfileAvatarValue = null;
+  renderServerProfileAvatarPreview();
+  serverProfileOverlay.classList.remove("hidden");
+});
+serverProfileCancel.addEventListener("click", () => serverProfileOverlay.classList.add("hidden"));
+serverProfileAvatarBtn.addEventListener("click", () => serverProfileAvatarInput.click());
+serverProfileAvatarInput.addEventListener("change", async () => {
+  const file = serverProfileAvatarInput.files[0];
+  if (!file) return;
+  serverProfileAvatarValue = await readAndResizeImage(file);
+  serverProfileAvatarChanged = true;
+  renderServerProfileAvatarPreview();
+});
+serverProfileAvatarReset.addEventListener("click", () => {
+  serverProfileAvatarChanged = true;
+  serverProfileAvatarValue = null;
+  renderServerProfileAvatarPreview();
+});
+serverProfileSave.addEventListener("click", () => {
+  socket.emit("update-server-profile", {
+    serverId: currentServerId,
+    nickname: serverProfileNicknameInput.value.trim(),
+    avatarChanged: serverProfileAvatarChanged,
+    avatar: serverProfileAvatarValue,
+  });
+  serverProfileOverlay.classList.add("hidden");
+});
+
 document.getElementById("menu-invite").addEventListener("click", () => {
   const srv = myServers.find((s) => s.id === currentServerId);
   if (!srv || !srv.inviteCode) return;
@@ -1165,14 +1377,20 @@ document.getElementById("menu-leave-server").addEventListener("click", () => {
   serverDropdown.classList.add("hidden");
 });
 
+function hasAnyServerAdminPerm() {
+  // Só permissões com uma aba de verdade nas configurações do servidor — MANAGE_EMOJIS não tem
+  // (emoji se gerencia pelo próprio picker de emojis), então não entra aqui.
+  return hasPerm(PERMS.MANAGE_CHANNELS) || hasPerm(PERMS.MANAGE_ROLES) || hasPerm(PERMS.KICK_MEMBERS) ||
+    hasPerm(PERMS.BAN_MEMBERS) || hasPerm(PERMS.MANAGE_SERVER) || hasPerm(PERMS.MANAGE_WEBHOOKS);
+}
 function updateServerMenuVisibility() {
   const isOwner = myRole === "owner";
-  document.getElementById("menu-invite").classList.toggle("hidden", !isOwner);
-  document.getElementById("menu-create-channel").classList.toggle("hidden", !isOwner);
-  document.getElementById("menu-create-category").classList.toggle("hidden", !isOwner);
-  document.getElementById("menu-change-icon").classList.toggle("hidden", !isOwner);
+  document.getElementById("menu-invite").classList.toggle("hidden", !hasPerm(PERMS.MANAGE_SERVER));
+  document.getElementById("menu-create-channel").classList.toggle("hidden", !hasPerm(PERMS.MANAGE_CHANNELS));
+  document.getElementById("menu-create-category").classList.toggle("hidden", !hasPerm(PERMS.MANAGE_CHANNELS));
+  document.getElementById("menu-change-icon").classList.toggle("hidden", !hasPerm(PERMS.MANAGE_SERVER));
   document.getElementById("menu-leave-server").classList.toggle("hidden", isOwner || currentServerId === "default-server");
-  document.getElementById("menu-server-settings").classList.toggle("hidden", !isOwner);
+  document.getElementById("menu-server-settings").classList.toggle("hidden", !(isOwner || hasAnyServerAdminPerm()));
 }
 
 // ---------- Página de Configurações do Servidor ----------
@@ -1180,18 +1398,40 @@ const serverSettingsOverlay = document.getElementById("server-settings-overlay")
 const serverSettingsTitle = document.getElementById("server-settings-title");
 const serverRenameInput = document.getElementById("server-rename-input");
 const serverMembersSettingsList = document.getElementById("server-members-settings-list");
+const serverBansSettingsList = document.getElementById("server-bans-settings-list");
 const serverInviteCodeDisplay = document.getElementById("server-invite-code-display");
 
+function updateServerSettingsTabVisibility() {
+  const isOwner = myRole === "owner";
+  document.querySelector('.server-settings-nav-item[data-tab="overview"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.MANAGE_SERVER)));
+  document.querySelector('.server-settings-nav-item[data-tab="invites"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.MANAGE_SERVER)));
+  document.querySelector('.server-settings-nav-item[data-tab="roles"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.MANAGE_ROLES)));
+  document.querySelector('.server-settings-nav-item[data-tab="webhooks"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.MANAGE_WEBHOOKS)));
+  document.querySelector('.server-settings-nav-item[data-tab="members"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.KICK_MEMBERS) || hasPerm(PERMS.BAN_MEMBERS) || hasPerm(PERMS.MANAGE_ROLES)));
+  document.querySelector('.server-settings-nav-item[data-tab="bans"]').classList.toggle("hidden", !(isOwner || hasPerm(PERMS.BAN_MEMBERS)));
+  document.querySelector('.server-settings-nav-item[data-tab="delete"]').classList.toggle("hidden", !isOwner);
+}
+function firstVisibleServerSettingsTab() {
+  return [...document.querySelectorAll(".server-settings-nav-item[data-tab]")].find((t) => !t.classList.contains("hidden"));
+}
 function openServerSettings() {
   const srv = myServers.find((s) => s.id === currentServerId);
   serverSettingsTitle.textContent = srv ? srv.name : "Servidor";
   serverRenameInput.value = srv ? srv.name : "";
   serverInviteCodeDisplay.value = srv?.inviteCode || "";
+  updateServerSettingsTabVisibility();
   document.querySelectorAll(".server-settings-nav-item").forEach((t) => t.classList.remove("active"));
-  document.querySelector('.server-settings-nav-item[data-tab="overview"]').classList.add("active");
   document.querySelectorAll(".server-settings-tab").forEach((t) => t.classList.add("hidden"));
-  document.getElementById("settings-tab-overview").classList.remove("hidden");
+  const firstTab = firstVisibleServerSettingsTab();
+  if (firstTab) {
+    firstTab.classList.add("active");
+    document.getElementById(`settings-tab-${firstTab.dataset.tab}`).classList.remove("hidden");
+  }
   socket.emit("get-server-members", { serverId: currentServerId });
+  socket.emit("get-server-bans", { serverId: currentServerId });
+  socket.emit("get-roles", { serverId: currentServerId });
+  socket.emit("get-webhooks", { serverId: currentServerId });
+  populateWebhookChannelSelect();
   serverSettingsOverlay.classList.remove("hidden");
 }
 document.getElementById("server-settings-close").addEventListener("click", () => serverSettingsOverlay.classList.add("hidden"));
@@ -1224,16 +1464,193 @@ function renderServerMembersSettings(members) {
   serverMembersSettingsList.innerHTML = members.map((m) => `
     <div class="friend-row" data-username="${escapeHtml(m.username)}">
       ${avatarHtml(m.username, m.avatar, 32)}
-      <span class="friend-name">${escapeHtml(m.username)} <small style="color:var(--text-muted)">${m.role === "owner" ? "Dono" : m.role === "moderator" ? "Moderador" : "Membro"}</small></span>
-      ${m.role !== "owner" ? `<button class="ghost-btn settings-kick-btn">Remover</button>` : ""}
+      <span class="friend-name">${escapeHtml(m.nickname || m.username)}${m.nickname ? ` <small style="color:var(--text-muted)">(@${escapeHtml(m.username)})</small>` : ""} <small style="color:var(--text-muted)">${m.role === "owner" ? "Dono" : "Membro"}</small></span>
+      ${m.role !== "owner" ? `
+        ${hasPerm(PERMS.MANAGE_ROLES) ? '<button class="ghost-btn settings-roles-btn">Cargos</button>' : ""}
+        ${hasPerm(PERMS.KICK_MEMBERS) ? '<button class="ghost-btn settings-kick-btn">Remover</button>' : ""}
+        ${hasPerm(PERMS.BAN_MEMBERS) ? '<button class="ghost-btn danger settings-ban-btn">Banir</button>' : ""}
+      ` : ""}
     </div>`).join("");
+  serverMembersSettingsList.querySelectorAll(".settings-roles-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => openMemberRolesModal(e.target.closest(".friend-row").dataset.username));
+  });
   serverMembersSettingsList.querySelectorAll(".settings-kick-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       const uname = e.target.closest(".friend-row").dataset.username;
       if (confirm(`Remover ${uname} desse servidor?`)) socket.emit("kick-member", { serverId: currentServerId, targetUsername: uname });
     });
   });
+  serverMembersSettingsList.querySelectorAll(".settings-ban-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const uname = e.target.closest(".friend-row").dataset.username;
+      if (confirm(`Banir ${uname} desse servidor? A pessoa não vai conseguir voltar nem com um convite novo, até você desbanir.`)) {
+        socket.emit("ban-member", { serverId: currentServerId, targetUsername: uname });
+      }
+    });
+  });
 }
+
+// ---------- Webhooks ----------
+const serverWebhooksList = document.getElementById("server-webhooks-list");
+const createWebhookNameInput = document.getElementById("create-webhook-name-input");
+const createWebhookChannelSelect = document.getElementById("create-webhook-channel-select");
+const createWebhookBtn = document.getElementById("create-webhook-btn");
+
+function populateWebhookChannelSelect() {
+  createWebhookChannelSelect.innerHTML = channels.filter((c) => c.type === "text")
+    .map((c) => `<option value="${c.id}">#${escapeHtml(c.name)}</option>`).join("");
+}
+createWebhookBtn.addEventListener("click", () => {
+  const name = createWebhookNameInput.value.trim();
+  const channelId = createWebhookChannelSelect.value;
+  if (!name || !channelId) return;
+  socket.emit("create-webhook", { serverId: currentServerId, channelId, name });
+  createWebhookNameInput.value = "";
+});
+
+function renderWebhooksSettings(webhooks) {
+  serverWebhooksList.innerHTML = webhooks.length
+    ? webhooks.map((w) => {
+        const ch = channels.find((c) => c.id === w.channel_id);
+        const url = `${currentServerUrl}/webhooks/${w.id}/${w.token}`;
+        return `
+        <div class="friend-row webhook-row" data-webhook-id="${escapeHtml(w.id)}">
+          ${avatarHtml(w.name, w.avatar, 32)}
+          <span class="friend-name">${escapeHtml(w.name)} <small style="color:var(--text-muted)">#${escapeHtml(ch ? ch.name : "?")}</small>
+            <input type="text" class="modal-input webhook-url-input" readonly value="${escapeHtml(url)}" />
+          </span>
+          <button class="ghost-btn danger settings-delete-webhook-btn">Apagar</button>
+        </div>`;
+      }).join("")
+    : `<div class="friend-row" style="opacity:0.6;">Nenhum webhook criado ainda.</div>`;
+  serverWebhooksList.querySelectorAll(".webhook-url-input").forEach((input) => {
+    input.addEventListener("click", () => input.select());
+  });
+  serverWebhooksList.querySelectorAll(".settings-delete-webhook-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const webhookId = e.target.closest(".webhook-row").dataset.webhookId;
+      if (confirm("Apagar esse webhook? A URL para de funcionar imediatamente.")) {
+        socket.emit("delete-webhook", { serverId: currentServerId, webhookId });
+      }
+    });
+  });
+}
+
+function renderServerBansSettings(bans) {
+  serverBansSettingsList.innerHTML = bans.length
+    ? bans.map((b) => `
+      <div class="friend-row" data-username="${escapeHtml(b.username)}">
+        ${avatarHtml(b.username, null, 32)}
+        <span class="friend-name">${escapeHtml(b.username)}</span>
+        <button class="ghost-btn settings-unban-btn">Desbanir</button>
+      </div>`).join("")
+    : `<div class="friend-row" style="opacity:0.6;">Ninguém banido por aqui.</div>`;
+  serverBansSettingsList.querySelectorAll(".settings-unban-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const uname = e.target.closest(".friend-row").dataset.username;
+      socket.emit("unban-member", { serverId: currentServerId, targetUsername: uname });
+    });
+  });
+}
+
+// ---------- Cargos com permissões granulares ----------
+let lastRoles = [];
+let lastMemberRoles = []; // [{ username, role_id }]
+const serverRolesList = document.getElementById("server-roles-list");
+const createRoleBtn = document.getElementById("create-role-btn");
+const roleEditorOverlay = document.getElementById("role-editor-overlay");
+const roleEditorTitle = document.getElementById("role-editor-title");
+const roleEditorNameInput = document.getElementById("role-editor-name-input");
+const roleEditorColorInput = document.getElementById("role-editor-color-input");
+const roleEditorPermissions = document.getElementById("role-editor-permissions");
+const roleEditorDelete = document.getElementById("role-editor-delete");
+const roleEditorCancel = document.getElementById("role-editor-cancel");
+const roleEditorSave = document.getElementById("role-editor-save");
+let editingRoleId = null;
+
+function renderRolesSettings(roles, memberRoles) {
+  lastRoles = roles || [];
+  lastMemberRoles = memberRoles || [];
+  const canManage = hasPerm(PERMS.MANAGE_ROLES);
+  serverRolesList.innerHTML = lastRoles.map((r) => `
+    <div class="friend-row" data-role-id="${escapeHtml(r.id)}">
+      <span class="role-color-dot" style="background:${r.color || "var(--text-muted)"}"></span>
+      <span class="friend-name">${escapeHtml(r.is_default ? "everyone" : r.name)}</span>
+      ${canManage ? `<button class="ghost-btn settings-edit-role-btn">Editar</button>` : ""}
+    </div>`).join("");
+  createRoleBtn.classList.toggle("hidden", !canManage);
+  serverRolesList.querySelectorAll(".settings-edit-role-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const roleId = e.target.closest(".friend-row").dataset.roleId;
+      openRoleEditor(lastRoles.find((r) => r.id === roleId));
+    });
+  });
+}
+
+function permissionCheckboxesHtml(checkedMask) {
+  return Object.keys(PERMS).map((key) => `
+    <label class="checkbox-label">
+      <input type="checkbox" data-perm="${key}" ${(checkedMask & PERMS[key]) ? "checked" : ""} />
+      ${escapeHtml(PERM_LABELS_PT[key])}
+    </label>`).join("");
+}
+
+function openRoleEditor(role) {
+  editingRoleId = role ? role.id : null;
+  roleEditorTitle.textContent = role ? `Editar cargo` : "Criar cargo";
+  roleEditorNameInput.value = role && !role.is_default ? role.name : (role ? "everyone" : "");
+  roleEditorNameInput.disabled = !!(role && role.is_default);
+  roleEditorColorInput.value = (role && role.color) || "#99aab5";
+  roleEditorPermissions.innerHTML = permissionCheckboxesHtml(role ? role.permissions : 0);
+  roleEditorDelete.classList.toggle("hidden", !role || role.is_default);
+  roleEditorOverlay.classList.remove("hidden");
+}
+createRoleBtn.addEventListener("click", () => openRoleEditor(null));
+roleEditorCancel.addEventListener("click", () => roleEditorOverlay.classList.add("hidden"));
+roleEditorSave.addEventListener("click", () => {
+  const name = roleEditorNameInput.value.trim();
+  if (!name && !roleEditorNameInput.disabled) return; // nome só é opcional pro cargo "everyone" (campo desabilitado)
+  let permissions = 0;
+  roleEditorPermissions.querySelectorAll("input[data-perm]:checked").forEach((cb) => { permissions |= PERMS[cb.dataset.perm]; });
+  const color = roleEditorColorInput.value;
+  if (editingRoleId) socket.emit("update-role", { serverId: currentServerId, roleId: editingRoleId, name, color, permissions });
+  else socket.emit("create-role", { serverId: currentServerId, name, color, permissions });
+  roleEditorOverlay.classList.add("hidden");
+});
+roleEditorDelete.addEventListener("click", () => {
+  if (!editingRoleId) return;
+  if (confirm("Apagar esse cargo? Quem tinha ele perde as permissões associadas.")) {
+    socket.emit("delete-role", { serverId: currentServerId, roleId: editingRoleId });
+    roleEditorOverlay.classList.add("hidden");
+  }
+});
+
+// ---------- Cargos de um membro específico ----------
+const memberRolesOverlay = document.getElementById("member-roles-overlay");
+const memberRolesTitle = document.getElementById("member-roles-title");
+const memberRolesListEl = document.getElementById("member-roles-list");
+const memberRolesClose = document.getElementById("member-roles-close");
+
+function openMemberRolesModal(targetUsername) {
+  memberRolesTitle.textContent = `Cargos de ${targetUsername}`;
+  const assignedIds = new Set(lastMemberRoles.filter((mr) => mr.username === targetUsername).map((mr) => mr.role_id));
+  const assignable = lastRoles.filter((r) => !r.is_default);
+  memberRolesListEl.innerHTML = assignable.length
+    ? assignable.map((r) => `
+      <label class="checkbox-label">
+        <input type="checkbox" data-role-id="${escapeHtml(r.id)}" ${assignedIds.has(r.id) ? "checked" : ""} />
+        <span class="role-color-dot" style="background:${r.color || "var(--text-muted)"}"></span>
+        ${escapeHtml(r.name)}
+      </label>`).join("")
+    : `<div style="opacity:0.6;">Nenhum cargo criado ainda. Crie um na aba "Cargos" das configurações do servidor.</div>`;
+  memberRolesListEl.querySelectorAll("input[data-role-id]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      socket.emit("assign-role", { serverId: currentServerId, targetUsername, roleId: cb.dataset.roleId, assign: cb.checked });
+    });
+  });
+  memberRolesOverlay.classList.remove("hidden");
+}
+memberRolesClose.addEventListener("click", () => memberRolesOverlay.classList.add("hidden"));
 
 // ---------- Categorias ----------
 function populateCategorySelect() {
@@ -1243,24 +1660,25 @@ function populateCategorySelect() {
 
 // ---------- Canais: listar, criar, apagar ----------
 function updateRoleUI() {
-  const isOwner = myRole === "owner";
-  addTextChannelBtn.classList.toggle("hidden", !isOwner);
-  addVoiceChannelBtn.classList.toggle("hidden", !isOwner);
+  const canManageChannels = hasPerm(PERMS.MANAGE_CHANNELS);
+  addTextChannelBtn.classList.toggle("hidden", !canManageChannels);
+  addVoiceChannelBtn.classList.toggle("hidden", !canManageChannels);
   updateServerMenuVisibility();
   renderChannelLists();
   renderMemberList(lastMemberList);
 }
 
 function renderChannelLists() {
-  const isOwner = myRole === "owner";
-  const deleteBtnHtml = isOwner ? `<span class="channel-delete" data-tooltip="Apagar canal">${ICONS.x}</span>` : "";
+  const canManageChannels = hasPerm(PERMS.MANAGE_CHANNELS);
+  const deleteBtnHtml = canManageChannels ? `<span class="channel-delete" data-tooltip="Apagar canal">${ICONS.x}</span>` : "";
+  const slowModeBtnHtml = canManageChannels ? `<span class="channel-slowmode" data-tooltip="Modo lento">${ICONS.clock}</span>` : "";
 
   textChannelsEl.innerHTML = "";
   voiceChannelsEl.innerHTML = "";
 
   const textChs = channels.filter((c) => c.type === "text");
   const uncategorized = textChs.filter((c) => !c.category_id);
-  uncategorized.forEach((ch) => appendChannelLi(textChannelsEl, ch, deleteBtnHtml, ch.is_private ? ICONS.lock : ICONS.hash, () => joinChannel(ch.id)));
+  uncategorized.forEach((ch) => appendChannelLi(textChannelsEl, ch, deleteBtnHtml, ch.is_private ? ICONS.lock : ICONS.hash, () => joinChannel(ch.id), false, slowModeBtnHtml));
 
   categories.forEach((cat) => {
     const inCat = textChs.filter((c) => c.category_id === cat.id);
@@ -1275,22 +1693,33 @@ function renderChannelLists() {
       renderChannelLists();
     });
     textChannelsEl.appendChild(header);
-    if (!isCollapsed) inCat.forEach((ch) => appendChannelLi(textChannelsEl, ch, deleteBtnHtml, ch.is_private ? ICONS.lock : ICONS.hash, () => joinChannel(ch.id)));
+    if (!isCollapsed) inCat.forEach((ch) => appendChannelLi(textChannelsEl, ch, deleteBtnHtml, ch.is_private ? ICONS.lock : ICONS.hash, () => joinChannel(ch.id), false, slowModeBtnHtml));
   });
 
   channels.filter((c) => c.type === "voice").forEach((ch) => appendChannelLi(voiceChannelsEl, ch, deleteBtnHtml, ICONS.volume, () => joinVoiceChannel(ch.id), true));
 }
 
-function appendChannelLi(container, ch, deleteBtnHtml, icon, onClick, isVoice) {
+function appendChannelLi(container, ch, deleteBtnHtml, icon, onClick, isVoice, slowModeBtnHtml) {
   const li = document.createElement("li");
   const activeClass = isVoice ? (inVoiceChannel === ch.id ? " active" : "") : (ch.id === currentChannel && !currentDmUser ? " active" : "");
   li.className = "channel-item" + (isVoice ? " voice-item" : "") + activeClass;
   const unreadDot = !isVoice && unreadChannels.has(ch.id) ? `<span class="unread-dot"></span>` : "";
-  li.innerHTML = `<span class="channel-hash">${icon}</span><span class="channel-name">${escapeHtml(ch.name)}</span>${unreadDot}${deleteBtnHtml}`;
+  const slowIndicator = !isVoice && ch.slow_mode_seconds > 0 ? `<span class="channel-hash" data-tooltip="Modo lento: ${ch.slow_mode_seconds}s">${ICONS.clock}</span>` : "";
+  li.innerHTML = `<span class="channel-hash">${icon}</span><span class="channel-name">${escapeHtml(ch.name)}</span>${unreadDot}${slowIndicator}${slowModeBtnHtml || ""}${deleteBtnHtml}`;
   li.querySelector(".channel-name").addEventListener("click", onClick);
-  li.querySelector(".channel-hash").addEventListener("click", onClick);
+  li.querySelectorAll(".channel-hash")[0].addEventListener("click", onClick);
   const delBtn = li.querySelector(".channel-delete");
   if (delBtn) delBtn.addEventListener("click", (e) => { e.stopPropagation(); if (confirm(`Apagar o canal ${ch.name}?`)) socket.emit("delete-channel", { id: ch.id, serverId: currentServerId }); });
+  const slowBtn = li.querySelector(".channel-slowmode");
+  if (slowBtn) {
+    slowBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const input = prompt(`Modo lento para #${ch.name} (segundos entre mensagens de cada pessoa, 0 desativa):`, String(ch.slow_mode_seconds || 0));
+      if (input === null) return;
+      const seconds = Math.max(0, Math.min(21600, parseInt(input, 10) || 0));
+      socket.emit("set-channel-slow-mode", { id: ch.id, serverId: currentServerId, slowModeSeconds: seconds });
+    });
+  }
   container.appendChild(li);
 }
 
@@ -1302,6 +1731,9 @@ function openCreateChannelModal(type) {
   createChannelInput.value = "";
   createChannelCategoryLabel.classList.toggle("hidden", type === "voice");
   createChannelCategorySelect.classList.toggle("hidden", type === "voice");
+  createChannelSlowmodeLabel.classList.toggle("hidden", type === "voice");
+  createChannelSlowmodeInput.classList.toggle("hidden", type === "voice");
+  createChannelSlowmodeInput.value = "0";
   createChannelOverlay.classList.remove("hidden");
   createChannelInput.focus();
 }
@@ -1314,7 +1746,8 @@ createChannelConfirm.addEventListener("click", () => {
   const inviteUsernames = isPrivate
     ? createChannelInviteInput.value.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
-  socket.emit("create-channel", { name, type: pendingChannelType, serverId: currentServerId, categoryId: createChannelCategorySelect.value || null, isPrivate, inviteUsernames });
+  const slowModeSeconds = pendingChannelType === "voice" ? 0 : Math.max(0, Math.min(21600, parseInt(createChannelSlowmodeInput.value, 10) || 0));
+  socket.emit("create-channel", { name, type: pendingChannelType, serverId: currentServerId, categoryId: createChannelCategorySelect.value || null, isPrivate, inviteUsernames, slowModeSeconds });
   createChannelOverlay.classList.add("hidden");
   createChannelPrivate.checked = false;
   createChannelInviteWrap.classList.add("hidden");
@@ -1327,6 +1760,9 @@ function joinChannel(channel) {
   unreadChannels.delete(channel);
   replyTarget = null;
   hideReplyPreview();
+  hideSlowModeBanner();
+  threadsByRootMessage.clear();
+  closeThreadPanel();
   const ch = channels.find((c) => c.id === channel);
   currentChannelName.textContent = "#" + (ch ? ch.name : channel);
   messagesEl.innerHTML = "";
@@ -1359,12 +1795,24 @@ pinnedBtn.addEventListener("click", () => {
 pinnedClose.addEventListener("click", () => pinnedOverlay.classList.add("hidden"));
 
 // ---------- Chat de texto ----------
-messageForm.addEventListener("submit", (e) => {
+messageForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = messageInput.value;
   if (!text.trim() && !pendingAttachment) return;
-  if (currentDmUser) socket.emit("dm-message", { toUsername: currentDmUser, text });
-  else socket.emit("chat-message", { text, attachment: pendingAttachment, replyToId: replyTarget ? replyTarget.id : null });
+  if (currentDmUser) {
+    const dmText = text.trim().slice(0, 2000); // mantém o texto cifrado dentro do limite que o servidor aceita sem cortar no meio
+    const ciphertext = await encryptDm(currentDmUser, dmText);
+    if (ciphertext) socket.emit("dm-message", { toUsername: currentDmUser, text: ciphertext, encrypted: true });
+    else socket.emit("dm-message", { toUsername: currentDmUser, text: dmText }); // outra pessoa ainda não tem chave configurada: manda sem cifrar
+  } else {
+    const slowMode = currentChannelSlowMode();
+    if (slowMode > 0) {
+      const waitMs = slowMode * 1000 - (Date.now() - (lastSentAtByChannel.get(currentChannel) || 0));
+      if (waitMs > 0) { showSlowModeBanner(waitMs); return; }
+      lastSentAtByChannel.set(currentChannel, Date.now());
+    }
+    socket.emit("chat-message", { text, attachment: pendingAttachment, replyToId: replyTarget ? replyTarget.id : null });
+  }
   messageInput.value = "";
   clearAttachment();
   replyTarget = null;
@@ -1429,10 +1877,17 @@ function linkEmbedHtml(embed) {
     </a>`;
 }
 
+function resolveDisplay(rawUsername, rawAvatar, isDm) {
+  if (isDm) return { name: rawUsername, avatar: rawAvatar, color: null };
+  const member = lastMemberList.find((m) => m.username === rawUsername);
+  return { name: (member && member.nickname) || rawUsername, avatar: (member && member.avatar) || rawAvatar, color: member?.roleColor || null };
+}
+
 function messageRowHtml(msg, isDm, grouped) {
   const author = isDm ? msg.from : msg.username;
+  const { name: displayName, avatar: displayAvatar, color: roleColor } = resolveDisplay(author, msg.avatar, isDm);
   const isMine = author === username;
-  const canModerate = !isDm && (myRole === "owner" || myRole === "moderator");
+  const canModerate = !isDm && hasPerm(PERMS.MANAGE_MESSAGES);
   let attachmentHtml = "";
   if (msg.attachment) {
     attachmentHtml = msg.attachment.type.startsWith("image/")
@@ -1443,7 +1898,7 @@ function messageRowHtml(msg, isDm, grouped) {
     ? `<div class="msg-reactions">${Object.entries(msg.reactions).map(([emoji, users]) => `<button class="reaction-pill${users.includes(username) ? " mine" : ""}" data-emoji="${emoji}">${emoji} ${users.length}</button>`).join("")}</div>`
     : `<div class="msg-reactions"></div>`;
   const time = new Date(msg.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  const color = colorForUsername(author);
+  const color = roleColor || colorForUsername(author);
   const editedTag = msg.edited ? `<span class="msg-edited">(editado)</span>` : "";
   const pinnedTag = msg.pinned ? `<span class="msg-pinned-tag">📌</span>` : "";
   let actions = "";
@@ -1455,17 +1910,20 @@ function messageRowHtml(msg, isDm, grouped) {
 
   const gutterHtml = grouped
     ? `<div class="msg-gutter"><span class="msg-hover-time">${time}</span></div>`
-    : `<div class="msg-gutter">${avatarHtml(author, msg.avatar, 40)}</div>`;
+    : `<div class="msg-gutter">${avatarHtml(author, displayAvatar, 40)}</div>`;
 
+  const webhookTag = msg.is_webhook ? `<span class="webhook-tag">WEBHOOK</span>` : "";
   const headerHtml = grouped ? "" : `
       <div class="msg-meta">
-        <span class="msg-author" style="color:${color}">${escapeHtml(author)}</span>
+        <span class="msg-author" style="color:${color}">${escapeHtml(displayName)}</span>
+        ${webhookTag}
         <span class="msg-time">${time}</span>
         ${editedTag}${pinnedTag}
       </div>`;
   const hoverActionsHtml = `
       <div class="msg-hover-actions">
         ${!isDm ? `<button class="msg-react-btn" data-tooltip="Adicionar reação">${ICONS.reactAdd}</button>` : ""}
+        ${!isDm ? `<button class="msg-thread-btn" data-tooltip="Thread">${ICONS.thread}</button>` : ""}
         ${actions}
       </div>`;
 
@@ -1475,7 +1933,7 @@ function messageRowHtml(msg, isDm, grouped) {
       ${headerHtml}
       ${hoverActionsHtml}
       ${replyQuoteHtml}
-      <div class="msg-text-wrap">${msg.text ? `<div class="msg-text">${renderMessageText(msg.text)}</div>` : ""}</div>
+      <div class="msg-text-wrap">${msg.text ? `<div class="msg-text">${renderMessageText(msg.text, msg.mentions_everyone)}</div>` : ""}</div>
       <div class="msg-embed-wrap">${linkEmbedHtml(msg.embed)}</div>
       ${attachmentHtml}
       ${reactionsHtml}
@@ -1494,6 +1952,7 @@ function appendMessage(msg) {
   wireMessageActions(div, msg, false);
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+  renderThreadPillFor(msg.id);
 }
 function wireMessageActions(div, msg, isDm) {
   const reactBtn = div.querySelector(".msg-react-btn");
@@ -1510,6 +1969,14 @@ function wireMessageActions(div, msg, isDm) {
   if (pinBtn) pinBtn.addEventListener("click", () => socket.emit("pin-message", { messageId: msg.id }));
   const replyBtn = div.querySelector(".msg-reply-btn");
   if (replyBtn) replyBtn.addEventListener("click", () => startReply(msg));
+  const threadBtn = div.querySelector(".msg-thread-btn");
+  if (threadBtn) threadBtn.addEventListener("click", () => {
+    const existing = threadsByRootMessage.get(msg.id);
+    if (existing) { openThreadPanel(existing.id); return; }
+    const title = prompt("Título da nova thread:", (msg.text || "Nova thread").slice(0, 60));
+    if (!title || !title.trim()) return;
+    socket.emit("create-thread", { serverId: currentServerId, channelId: currentChannel, rootMessageId: msg.id, title: title.trim() });
+  });
   resolveReplyQuotes();
 }
 function startReply(msg) {
@@ -1530,18 +1997,105 @@ function resolveReplyQuotes() {
     }
   });
 }
+
+// ---------- Threads (conversas ramificadas dentro de um canal) ----------
+const threadsByRootMessage = new Map(); // rootMessageId -> { id, title, replyCount }
+let currentThreadId = null;
+const threadOverlay = document.getElementById("thread-overlay");
+const threadTitleDisplay = document.getElementById("thread-title-display");
+const threadMessagesEl = document.getElementById("thread-messages");
+const threadClose = document.getElementById("thread-close");
+const threadDeleteBtn = document.getElementById("thread-delete-btn");
+const threadMessageForm = document.getElementById("thread-message-form");
+const threadMessageInput = document.getElementById("thread-message-input");
+threadDeleteBtn.innerHTML = ICONS.trash;
+
+function threadPillLabel(t) {
+  return `${ICONS.thread} ${t.replyCount} ${t.replyCount === 1 ? "resposta" : "respostas"}`;
+}
+function renderThreadPillFor(messageId) {
+  const body = messagesEl.querySelector(`.msg[data-id="${messageId}"] .msg-body`);
+  if (!body) return;
+  let pill = body.querySelector(".thread-pill");
+  const t = threadsByRootMessage.get(messageId);
+  if (!t) { if (pill) pill.remove(); return; }
+  if (!pill) {
+    pill = document.createElement("button");
+    pill.className = "thread-pill";
+    pill.type = "button";
+    pill.addEventListener("click", () => openThreadPanel(threadsByRootMessage.get(messageId).id));
+    body.appendChild(pill);
+  }
+  pill.innerHTML = threadPillLabel(t);
+}
+function openThreadPanel(threadId) {
+  currentThreadId = threadId;
+  threadMessagesEl.innerHTML = "";
+  threadTitleDisplay.textContent = "Carregando...";
+  threadDeleteBtn.classList.toggle("hidden", !hasPerm(PERMS.MANAGE_CHANNELS));
+  threadOverlay.classList.remove("hidden");
+  socket.emit("get-thread-messages", { threadId });
+}
+function closeThreadPanel() {
+  currentThreadId = null;
+  threadOverlay.classList.add("hidden");
+}
+threadClose.addEventListener("click", closeThreadPanel);
+threadDeleteBtn.addEventListener("click", () => {
+  if (!currentThreadId || !confirm("Apagar essa thread e todas as respostas dela?")) return;
+  socket.emit("delete-thread", { serverId: currentServerId, channelId: currentChannel, threadId: currentThreadId });
+});
+function threadMessageHtml(msg) {
+  const { name: displayName, avatar: displayAvatar, color: roleColor } = resolveDisplay(msg.username, msg.avatar, false);
+  const color = roleColor || colorForUsername(msg.username);
+  const time = new Date(msg.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return `
+    <div class="msg-gutter">${avatarHtml(msg.username, displayAvatar, 32)}</div>
+    <div class="msg-body">
+      <div class="msg-meta">
+        <span class="msg-author" style="color:${color}">${escapeHtml(displayName)}</span>
+        <span class="msg-time">${time}</span>
+      </div>
+      <div class="msg-text-wrap">${msg.text ? `<div class="msg-text">${renderMessageText(msg.text, false)}</div>` : ""}</div>
+    </div>`;
+}
+function appendThreadMessage(msg) {
+  const div = document.createElement("div");
+  div.className = "msg";
+  div.dataset.id = msg.id;
+  div.innerHTML = threadMessageHtml(msg);
+  threadMessagesEl.appendChild(div);
+  threadMessagesEl.scrollTop = threadMessagesEl.scrollHeight;
+}
+threadMessageForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = threadMessageInput.value.trim();
+  if (!text || !currentThreadId) return;
+  socket.emit("thread-message", { threadId: currentThreadId, text });
+  threadMessageInput.value = "";
+});
+
 function startEditMessage(div, msg, isDm) {
   const wrap = div.querySelector(".msg-text-wrap");
   wrap.innerHTML = `<input type="text" class="edit-message-input" value="${escapeHtml(msg.text || "")}" />`;
   const input = wrap.querySelector("input");
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
-  const commit = () => {
+  const commit = async () => {
     const val = input.value.trim();
-    if (val && val !== msg.text) socket.emit(isDm ? "edit-dm-message" : "edit-message", { messageId: msg.id, text: val });
-    else wrap.innerHTML = msg.text ? `<div class="msg-text">${renderMessageText(msg.text)}</div>` : "";
+    if (val && val !== msg.text) {
+      if (isDm && msg.encrypted) {
+        const peer = msg.from === username ? msg.to : msg.from;
+        const ciphertext = await encryptDm(peer, val);
+        socket.emit("edit-dm-message", { messageId: msg.id, text: ciphertext || val, encrypted: !!ciphertext });
+      } else {
+        socket.emit(isDm ? "edit-dm-message" : "edit-message", { messageId: msg.id, text: val, encrypted: false });
+      }
+    } else {
+      wrap.innerHTML = msg.text ? `<div class="msg-text">${renderMessageText(msg.text, msg.mentions_everyone)}</div>` : "";
+    }
   };
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") wrap.innerHTML = msg.text ? `<div class="msg-text">${renderMessageText(msg.text)}</div>` : ""; });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") wrap.innerHTML = msg.text ? `<div class="msg-text">${renderMessageText(msg.text, msg.mentions_everyone)}</div>` : ""; });
   input.addEventListener("blur", commit);
 }
 function updateMessageReactions(msg) {
@@ -1551,12 +2105,13 @@ function updateMessageReactions(msg) {
   div.innerHTML = messageRowHtml(msg, false, grouped);
   wireMessageActions(div, msg, false);
 }
-function updateDmMessage(msg) {
+async function updateDmMessage(msg) {
   const div = messagesEl.querySelector(`.msg[data-id="${msg.id}"]`);
   if (!div) return;
   const grouped = div.classList.contains("grouped");
-  div.innerHTML = messageRowHtml(msg, true, grouped);
-  wireMessageActions(div, msg, true);
+  const displayMsg = await resolveDmMessageText(msg);
+  div.innerHTML = messageRowHtml(displayMsg, true, grouped);
+  wireMessageActions(div, displayMsg, true);
 }
 
 let activeReactionMessageId = null;
@@ -1595,9 +2150,9 @@ emojiBtn.addEventListener("click", (e) => {
   const rect = emojiBtn.getBoundingClientRect();
   let html = EMOJI_SET.map((em) => `<span class="emoji-option" data-emoji="${em}">${em}</span>`).join("");
   if (customEmojis.length) {
-    html += customEmojis.map((em) => `<span class="emoji-option custom-emoji-option" data-name="${em.name}"><img class="custom-emoji" src="${em.image}" /></span>`).join("");
+    html += customEmojis.map((em) => `<span class="emoji-option custom-emoji-option" data-name="${em.name}"><img class="custom-emoji" src="${em.image}" />${em.animated ? '<span class="emoji-gif-badge">GIF</span>' : ""}</span>`).join("");
   }
-  if (myRole === "owner") html += `<span class="emoji-option add-custom-emoji-btn" data-tooltip="Adicionar emoji personalizado">➕</span>`;
+  if (hasPerm(PERMS.MANAGE_EMOJIS)) html += `<span class="emoji-option add-custom-emoji-btn" data-tooltip="Adicionar emoji personalizado">➕</span>`;
   emojiPicker.innerHTML = html;
   emojiPicker.style.left = (rect.left - 220) + "px";
   emojiPicker.style.top = (rect.top - 220) + "px";
@@ -1613,8 +2168,15 @@ function openCreateEmojiFlow() {
   input.onchange = async () => {
     const file = input.files[0];
     if (!file) return;
-    const image = await readAndResizeImage(file, 48);
-    socket.emit("create-emoji", { name: name.trim(), image, serverId: currentServerId });
+    if (file.type === "image/gif") {
+      if (file.size > 2 * 1024 * 1024) { alert("Esse GIF é grande demais para um emoji (máximo 2MB)."); return; }
+      const reader = new FileReader();
+      reader.onload = () => socket.emit("create-emoji", { name: name.trim(), image: reader.result, serverId: currentServerId, animated: true });
+      reader.readAsDataURL(file);
+    } else {
+      const image = await readAndResizeImage(file, 48);
+      socket.emit("create-emoji", { name: name.trim(), image, serverId: currentServerId, animated: false });
+    }
   };
   input.click();
 }
@@ -1638,8 +2200,7 @@ function renderMemberList(users) {
   const offline = lastMemberList.filter((u) => u.status === "offline");
 
   const owners = online.filter((u) => u.role === "owner");
-  const moderators = online.filter((u) => u.role === "moderator");
-  const members = online.filter((u) => !u.role || u.role === "member");
+  const members = online.filter((u) => u.role !== "owner");
 
   const renderGroup = (label, list, dimmed) => {
     if (!list.length) return;
@@ -1650,24 +2211,97 @@ function renderMemberList(users) {
     list.forEach((u) => {
       const li = document.createElement("li");
       if (dimmed) li.className = "member-offline";
-      const roleBadge = myRole === "owner" && u.username !== username
-        ? `<button class="role-toggle-btn" data-tooltip="Tornar moderador ou membro">${ICONS.shield}</button>` : "";
-      li.innerHTML = `${avatarWithStatusHtml(u.username, u.avatar, 26, u.status)}<span class="member-name">${escapeHtml(u.username)}</span>${roleBadge}`;
+      const roleBadge = hasPerm(PERMS.MANAGE_ROLES) && u.username !== username && u.role !== "owner"
+        ? `<button class="role-toggle-btn" data-tooltip="Cargos">${ICONS.shield}</button>` : "";
+      const nameColor = u.roleColor ? ` style="color:${u.roleColor}"` : "";
+      const roleTag = u.roleNames && u.roleNames.length ? ` <small style="color:var(--text-muted)">${escapeHtml(u.roleNames[0])}</small>` : "";
+      li.innerHTML = `${avatarWithStatusHtml(u.username, u.avatar, 26, u.status)}<span class="member-name"${nameColor}>${escapeHtml(u.nickname || u.username)}</span>${roleTag}${roleBadge}`;
       li.querySelector(".member-name").addEventListener("click", () => openUserProfile(u.username));
       const roleBtn = li.querySelector(".role-toggle-btn");
-      if (roleBtn) roleBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const newRole = prompt(`Cargo de ${u.username} nesse servidor: digite "moderator" ou "member"`, "moderator");
-        if (newRole === "moderator" || newRole === "member") socket.emit("set-member-role", { targetUsername: u.username, role: newRole, serverId: currentServerId });
-      });
+      if (roleBtn) roleBtn.addEventListener("click", (e) => { e.stopPropagation(); openMemberRolesModal(u.username); });
       memberItems.appendChild(li);
     });
   };
 
   renderGroup("Dono", owners);
-  renderGroup("Moderadores", moderators);
   renderGroup("Membros", members);
   renderGroup("Offline", offline, true);
+}
+
+// ---------- Criptografia ponta-a-ponta das DMs (ECDH P-256 + AES-GCM, via Web Crypto) ----------
+// A chave privada nunca sai deste dispositivo (fica só no config local do app).
+// Login num PC novo gera um par de chaves novo — conversas antigas ficam ilegíveis lá, é a troca
+// consciente que a gente topou pra ter E2EE de verdade sem montar um sistema de backup de chave.
+const E2EE_ALG = { name: "ECDH", namedCurve: "P-256" };
+let myKeyPair = null;
+const peerPublicKeys = new Map(); // username -> CryptoKey (pública, importada)
+const sharedKeysByPeer = new Map(); // username -> CryptoKey (AES-GCM derivada)
+
+function bufToBase64(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function base64ToBuf(b64) { return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer; }
+
+async function ensureMyKeyPair() {
+  if (myKeyPair) return myKeyPair;
+  const config = await window.electronAPI.getConfig();
+  if (config.e2eePrivateKey && config.e2eePublicKey) {
+    try {
+      const privateKey = await crypto.subtle.importKey("pkcs8", base64ToBuf(config.e2eePrivateKey), E2EE_ALG, true, ["deriveKey"]);
+      myKeyPair = { privateKey, publicKeyB64: config.e2eePublicKey };
+      socket.emit("update-public-key", { publicKey: config.e2eePublicKey });
+      return myKeyPair;
+    } catch (_) { /* chave local corrompida — gera uma nova abaixo */ }
+  }
+  const pair = await crypto.subtle.generateKey(E2EE_ALG, true, ["deriveKey"]);
+  const privateKeyB64 = bufToBase64(await crypto.subtle.exportKey("pkcs8", pair.privateKey));
+  const publicKeyB64 = bufToBase64(await crypto.subtle.exportKey("spki", pair.publicKey));
+  await window.electronAPI.setConfig({ e2eePrivateKey: privateKeyB64, e2eePublicKey: publicKeyB64 });
+  myKeyPair = { privateKey: pair.privateKey, publicKeyB64 };
+  socket.emit("update-public-key", { publicKey: publicKeyB64 });
+  return myKeyPair;
+}
+
+async function getSharedKeyWith(peerUsername) {
+  if (sharedKeysByPeer.has(peerUsername)) return sharedKeysByPeer.get(peerUsername);
+  const peerPublicKey = peerPublicKeys.get(peerUsername);
+  if (!peerPublicKey) return null;
+  const { privateKey } = await ensureMyKeyPair();
+  const sharedKey = await crypto.subtle.deriveKey(
+    { name: "ECDH", public: peerPublicKey }, privateKey, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
+  );
+  sharedKeysByPeer.set(peerUsername, sharedKey);
+  return sharedKey;
+}
+
+async function encryptDm(peerUsername, plaintext) {
+  try {
+    const key = await getSharedKeyWith(peerUsername);
+    if (!key) return null;
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plaintext));
+    return `${bufToBase64(iv)}:${bufToBase64(ciphertext)}`;
+  } catch (_) { return null; }
+}
+async function decryptDm(peerUsername, packed) {
+  try {
+    const [ivB64, ctB64] = String(packed).split(":");
+    const key = await getSharedKeyWith(peerUsername);
+    if (!key || !ivB64 || !ctB64) return null;
+    const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBuf(ivB64) }, key, base64ToBuf(ctB64));
+    return new TextDecoder().decode(plainBuf);
+  } catch (_) { return null; }
+}
+async function resolveDmMessageText(msg) {
+  if (!msg.encrypted) return msg;
+  const peer = msg.from === username ? msg.to : msg.from;
+  const plain = await decryptDm(peer, msg.text);
+  return plain !== null ? { ...msg, text: plain } : { ...msg, text: "🔒 Não foi possível decifrar esta mensagem neste dispositivo." };
+}
+function updateDmLockIndicator(locked) {
+  if (!currentDmUser) return;
+  currentChannelName.textContent = `@${currentDmUser} ${locked ? "🔒" : "🔓"}`;
+  currentChannelName.title = locked
+    ? "Mensagens protegidas por criptografia ponta-a-ponta"
+    : "Essa pessoa ainda não tem criptografia configurada neste dispositivo — mensagens novas não estão protegidas";
 }
 
 // ---------- Mensagens diretas ----------
@@ -1684,6 +2318,8 @@ function renderDmList(users) {
 }
 function openDm(withUsername) {
   hideFriendsHome();
+  hideSlowModeBanner();
+  closeThreadPanel();
   currentDmUser = withUsername;
   currentChannel = null;
   lastMsgAuthor = null; lastMsgTime = 0;
@@ -1697,17 +2333,31 @@ function openDm(withUsername) {
   searchResultsEl.classList.add("hidden");
   messageInput.placeholder = `Mensagem para ${withUsername}...`;
   renderChannelLists();
+  updateDmLockIndicator(peerPublicKeys.has(withUsername));
   socket.emit("dm-open", { withUsername });
+  socket.emit("get-public-key", { username: withUsername });
+  ensureMyKeyPair();
 }
-function renderDmHistory(messages) { messagesEl.innerHTML = ""; lastMsgAuthor = null; lastMsgTime = 0; messages.forEach(appendDmMessage); }
-function appendDmMessage(msg) {
+function renderDmHistory(messages, withUsername) {
+  messagesEl.innerHTML = ""; lastMsgAuthor = null; lastMsgTime = 0;
+  (async () => {
+    for (const msg of messages) {
+      if (currentDmUser !== withUsername) return; // saiu dessa conversa enquanto decifrava — para de anexar mensagens
+      await appendDmMessage(msg);
+    }
+  })();
+}
+async function appendDmMessage(msg) {
   const grouped = msg.from === lastMsgAuthor && (msg.timestamp - lastMsgTime) < GROUP_WINDOW_MS;
   lastMsgAuthor = msg.from; lastMsgTime = msg.timestamp;
+  const displayMsg = await resolveDmMessageText(msg);
+  const peer = msg.from === username ? msg.to : msg.from;
+  if (currentDmUser !== peer) return; // saiu dessa conversa enquanto decifrava (decrypt é assíncrono) — não mistura com a tela atual
   const div = document.createElement("div");
   div.className = "msg" + (grouped ? " grouped" : "");
   div.dataset.id = msg.id;
-  div.innerHTML = messageRowHtml(msg, true, grouped);
-  wireMessageActions(div, msg, true);
+  div.innerHTML = messageRowHtml(displayMsg, true, grouped);
+  wireMessageActions(div, displayMsg, true);
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -1717,7 +2367,7 @@ attachBtn.addEventListener("click", () => fileInput.click());
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files[0];
   if (!file) return;
-  if (file.size > 3 * 1024 * 1024) { alert("Arquivo muito grande (máx. 3MB por enquanto)."); fileInput.value = ""; return; }
+  if (file.size > 20 * 1024 * 1024) { alert("Arquivo muito grande (máx. 20MB)."); fileInput.value = ""; return; }
   const reader = new FileReader();
   reader.onload = () => { pendingAttachment = { name: file.name, type: file.type, dataUrl: reader.result }; attachmentName.textContent = file.name; attachmentPreview.classList.remove("hidden"); };
   reader.readAsDataURL(file);
